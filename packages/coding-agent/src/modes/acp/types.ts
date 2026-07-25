@@ -11,6 +11,7 @@ import type { AgentSideConnection, ClientCapabilities } from "@agentclientprotoc
 import type { AgentSessionRuntime, CreateAgentSessionRuntimeFactory } from "../../core/agent-session-runtime.ts";
 import type { ToolsOptions } from "../../core/tools/index.ts";
 import type { AcpEventTranslator, PromptTurnTracker } from "./event-translator.ts";
+import type { AcpToolCallMapper } from "./tool-call-mapper.ts";
 
 /**
  * Mutable holder for the capabilities the client sent in `initialize`.
@@ -80,6 +81,8 @@ export interface AcpSessionHandle {
 	readonly runtime: AgentSessionRuntime;
 	/** Translates AgentSessionEvents into session/update notifications. */
 	readonly translator: AcpEventTranslator;
+	/** Translates pi tool events into tool_call/tool_call_update notifications. */
+	readonly toolCalls: AcpToolCallMapper;
 	/** Pending `session/prompt` requests awaiting the next settle. */
 	readonly prompts: PromptTurnTracker;
 	/** Unsubscribe from the current session's events (reset on rebind). */

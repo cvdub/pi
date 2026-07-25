@@ -10,12 +10,13 @@
  * replacement; it is installed via `runtime.setRebindSession`.
  */
 
-import type { AgentSideConnection } from "@agentclientprotocol/sdk";
+import type { AgentSideConnection, AvailableCommand } from "@agentclientprotocol/sdk";
 import { RequestError } from "@agentclientprotocol/sdk";
 import { type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { SessionManager } from "../../core/session-manager.ts";
 import { resolvePath } from "../../utils/paths.ts";
 import { AcpEventTranslator, PromptTurnTracker } from "./event-translator.ts";
+import { AcpToolCallMapper } from "./tool-call-mapper.ts";
 import type { AcpAgentDeps, AcpSessionHandle, ClientCaps } from "./types.ts";
 
 export class AcpSessionRegistry {
@@ -61,6 +62,14 @@ export class AcpSessionRegistry {
 		});
 
 		const tracker = new PromptTurnTracker();
+		// The mapper feeds its updates back through the translator's ordered
+		// delivery tail, so it is bound after the translator exists.
+		let deliver: AcpEventTranslator | undefined;
+		const toolCalls = new AcpToolCallMapper({
+			sendUpdate: (update) => deliver?.sendUpdate(update),
+			// `runtime.cwd` follows extension-driven session replacement.
+			getCwd: () => runtime.cwd,
+		});
 		const translator = new AcpEventTranslator({
 			sessionId,
 			sendNotification: (notification) => this.connection.sessionUpdate(notification),
@@ -68,16 +77,17 @@ export class AcpSessionRegistry {
 			// `runtime.session` always points at the current session, also after
 			// extension-driven replacement.
 			isSessionIdle: () => runtime.session.isIdle,
-			// TODO(M2): pass the tool-call-mapper here as `toolEventSink`.
+			toolEventSink: toolCalls,
 		});
+		deliver = translator;
 
-		const handle: AcpSessionHandle = { sessionId, runtime, translator, prompts: tracker };
+		const handle: AcpSessionHandle = { sessionId, runtime, translator, prompts: tracker, toolCalls };
 		// Mandatory rebind: after /new, fork, or /resume replaces the session,
 		// re-bind extensions and re-subscribe — otherwise updates silently stop.
 		runtime.setRebindSession(async () => {
 			await this.bindHandle(handle);
 		});
-		await this.bindHandle(handle);
+		await this.bindHandle(handle, { deferCommands: true });
 		this.sessions.set(sessionId, handle);
 		return handle;
 	}
@@ -100,8 +110,11 @@ export class AcpSessionRegistry {
 			});
 	}
 
-	private async bindHandle(handle: AcpSessionHandle): Promise<void> {
+	private async bindHandle(handle: AcpSessionHandle, bindOptions: { deferCommands?: boolean } = {}): Promise<void> {
 		const session = handle.runtime.session;
+		// On a rebind the previous session's in-flight tool calls are gone; drop
+		// their state so no throttled snapshot trails into the new session.
+		handle.toolCalls.dispose();
 		await session.bindExtensions({
 			mode: "acp",
 			// TODO(M6): supply an ACP-backed uiContext (extension-ui.ts) so
@@ -148,7 +161,46 @@ export class AcpSessionRegistry {
 		handle.unsubscribeBackpressure = session.agent.subscribe(async () => {
 			await handle.translator.waitForDeliveries();
 		});
-		// TODO(M2): emit available_commands_update after every bind/rebind.
+		if (bindOptions.deferCommands) {
+			// A brand new session id only reaches the client in the `session/new`
+			// response, so let that response hit the wire before announcing the
+			// command set (the ordering the ACP SDK expects). Rebinds reuse an id
+			// the client already knows and publish immediately.
+			setTimeout(() => {
+				if (this.sessions.get(handle.sessionId) === handle) {
+					this.emitAvailableCommands(handle);
+				}
+			}, 0);
+		} else {
+			this.emitAvailableCommands(handle);
+		}
+	}
+
+	/**
+	 * Publish the session's slash commands (extension commands, prompt
+	 * templates, skills) after every bind and rebind — the command set belongs
+	 * to the AgentSession, so a `/new` or fork can change it.
+	 *
+	 * Clients invoke these as `/name` prompt text, which `session.prompt()`
+	 * already expands.
+	 */
+	private emitAvailableCommands(handle: AcpSessionHandle): void {
+		const session = handle.runtime.session;
+		const availableCommands: AvailableCommand[] = [];
+		for (const command of session.extensionRunner.getRegisteredCommands()) {
+			availableCommands.push({ name: command.invocationName, description: command.description ?? "" });
+		}
+		for (const template of session.promptTemplates) {
+			availableCommands.push({
+				name: template.name,
+				description: template.description,
+				...(template.argumentHint ? { input: { hint: template.argumentHint } } : {}),
+			});
+		}
+		for (const skill of session.resourceLoader.getSkills().skills) {
+			availableCommands.push({ name: `skill:${skill.name}`, description: skill.description });
+		}
+		handle.translator.sendUpdate({ sessionUpdate: "available_commands_update", availableCommands });
 	}
 
 	/** Dispose all sessions (used on shutdown and by the test harness). */
@@ -158,6 +210,7 @@ export class AcpSessionRegistry {
 		for (const handle of handles) {
 			handle.unsubscribe?.();
 			handle.unsubscribeBackpressure?.();
+			handle.toolCalls.dispose();
 			try {
 				await handle.runtime.dispose();
 			} catch (error) {

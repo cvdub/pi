@@ -58,7 +58,7 @@ import {
 	createAgentSessionFromServices,
 	createAgentSessionServices,
 } from "../../src/core/agent-session-runtime.ts";
-import type { ExtensionAPI } from "../../src/index.ts";
+import type { ExtensionAPI, ExtensionFactory } from "../../src/index.ts";
 import { type StartAcpAgentResult, startAcpAgent } from "../../src/modes/acp/acp-mode.ts";
 import type { AcpAgentDeps } from "../../src/modes/acp/types.ts";
 
@@ -75,7 +75,16 @@ export interface AcpHarnessOptions {
 	client?: Partial<Client>;
 	/** Delegation seam forwarded to `AcpAgentDeps.createToolsOptions`. */
 	createToolsOptions?: AcpAgentDeps["createToolsOptions"];
+	/**
+	 * Extra inline extensions loaded into every per-session runtime, after the
+	 * faux provider registration. Use these to register slash commands
+	 * (`available_commands_update`) or exercise the extension UI bridge.
+	 */
+	extensionFactories?: ExtensionFactory[];
 }
+
+/** The two session updates that carry tool-call state. */
+export type AcpToolCallUpdate = Extract<SessionUpdate, { sessionUpdate: "tool_call" | "tool_call_update" }>;
 
 export interface AcpNotificationWaitOptions {
 	/** Reject after this many milliseconds. Default: 10 seconds. */
@@ -120,6 +129,8 @@ export interface AcpHarness {
 	): Array<Extract<SessionUpdate, { sessionUpdate: T }>>;
 	/** Concatenated text of all recorded chunks of the given chunk type. */
 	chunkText(type: "agent_message_chunk" | "agent_thought_chunk" | "user_message_chunk"): string;
+	/** All `tool_call`/`tool_call_update` updates for one toolCallId, in arrival order. */
+	toolCallUpdates(toolCallId: string): AcpToolCallUpdate[];
 	/** Tear down sessions, unregister the faux provider, and remove temp dirs. */
 	dispose(): Promise<void>;
 }
@@ -176,6 +187,7 @@ export async function createAcpHarness(options: AcpHarnessOptions = {}): Promise
 							})),
 						});
 					},
+					...(options.extensionFactories ?? []),
 				],
 				noSkills: true,
 				noPromptTemplates: true,
@@ -302,6 +314,16 @@ export async function createAcpHarness(options: AcpHarnessOptions = {}): Promise
 			.filter((update): update is Extract<SessionUpdate, { sessionUpdate: T }> => update.sessionUpdate === type);
 	};
 
+	const toolCallUpdates = (toolCallId: string): AcpToolCallUpdate[] => {
+		return notifications
+			.map((notification) => notification.update)
+			.filter(
+				(update): update is AcpToolCallUpdate =>
+					(update.sessionUpdate === "tool_call" || update.sessionUpdate === "tool_call_update") &&
+					update.toolCallId === toolCallId,
+			);
+	};
+
 	const chunkText = (type: "agent_message_chunk" | "agent_thought_chunk" | "user_message_chunk"): string => {
 		return updatesOfType(type)
 			.map((update) => (update.content.type === "text" ? update.content.text : ""))
@@ -332,6 +354,7 @@ export async function createAcpHarness(options: AcpHarnessOptions = {}): Promise
 		waitForNotification,
 		updatesOfType,
 		chunkText,
+		toolCallUpdates,
 		dispose,
 	};
 }
