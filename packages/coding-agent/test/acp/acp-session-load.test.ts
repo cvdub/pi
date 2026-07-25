@@ -103,6 +103,7 @@ describe("ACP session/load (M5)", () => {
 			],
 		});
 		const sessionId = await first.openSession();
+		await first.client.setSessionConfigOption({ sessionId, configId: "thought_level", value: "high" });
 		const response = await first.prompt(sessionId, USER_TEXT);
 		expect(response.stopReason).toBe("end_turn");
 		await closeHarness(first);
@@ -166,6 +167,17 @@ describe("ACP session/load (M5)", () => {
 			type: "select",
 			currentValue: `${reconnected.faux.getModel().provider}/faux-1`,
 		});
+		expect(loadResponse.configOptions?.find((option) => option.category === "thought_level")).toMatchObject({
+			id: "thought_level",
+			type: "select",
+			currentValue: "high",
+		});
+		expect(loadResponse.configOptions?.find((option) => option.category === "mode")).toMatchObject({
+			id: "mode",
+			type: "select",
+			currentValue: "high",
+		});
+		expect(loadResponse.modes).toMatchObject({ currentModeId: "high" });
 	});
 
 	it("replays the completed tool call through the live tool-call mapping", async () => {
