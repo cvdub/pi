@@ -98,27 +98,14 @@ describe("ACP mode (M1)", () => {
 		});
 	});
 
-	it("advertises and synchronizes thinking config with legacy ACP session modes", async () => {
+	it("advertises thinking exactly once and never as an ACP session mode", async () => {
 		harness = await createAcpHarness();
 		await harness.initialize();
 
 		const response = await harness.newSession();
 		const thoughtOption = response.configOptions?.find((option) => option.category === "thought_level");
-		const modeOption = response.configOptions?.find((option) => option.category === "mode");
-		expect(modeOption).toMatchObject({
-			id: "mode",
-			name: "Session mode",
-			category: "mode",
-			type: "select",
-			currentValue: "medium",
-			options: [
-				{ value: "off", name: "Thinking: off" },
-				{ value: "minimal", name: "Thinking: minimal" },
-				{ value: "low", name: "Thinking: low" },
-				{ value: "medium", name: "Thinking: medium" },
-				{ value: "high", name: "Thinking: high" },
-			],
-		});
+		expect(response.modes ?? null).toBeNull();
+		expect(response.configOptions?.filter((option) => option.category === "mode")).toEqual([]);
 		expect(thoughtOption).toMatchObject({
 			id: "thought_level",
 			name: "Thinking",
@@ -133,18 +120,6 @@ describe("ACP mode (M1)", () => {
 				{ value: "high", name: "Thinking: high" },
 			],
 		});
-		expect(response.modes).toMatchObject({
-			currentModeId: "medium",
-			availableModes: [
-				{ id: "off", name: "Thinking: off" },
-				{ id: "minimal", name: "Thinking: minimal" },
-				{ id: "low", name: "Thinking: low" },
-				{ id: "medium", name: "Thinking: medium" },
-				{ id: "high", name: "Thinking: high" },
-				{ id: "xhigh", name: "Thinking: xhigh" },
-				{ id: "max", name: "Thinking: max" },
-			],
-		});
 
 		const configChanged = await harness.client.setSessionConfigOption({
 			sessionId: response.sessionId,
@@ -155,29 +130,17 @@ describe("ACP mode (M1)", () => {
 		expect(configChanged.configOptions.find((option) => option.category === "thought_level")).toMatchObject({
 			currentValue: "high",
 		});
-		expect(harness.updatesOfType("current_mode_update").at(-1)).toMatchObject({ currentModeId: "high" });
 		expect(harness.updatesOfType("config_option_update").at(-1)?.configOptions).toEqual(configChanged.configOptions);
+		expect(harness.updatesOfType("current_mode_update")).toEqual([]);
 
-		await harness.client.setSessionConfigOption({
-			sessionId: response.sessionId,
-			configId: "mode",
-			value: "low",
-		});
-		expect(harness.agent.agent.sessions.get(response.sessionId)?.runtime.session.thinkingLevel).toBe("low");
-		expect(harness.updatesOfType("current_mode_update").at(-1)).toMatchObject({ currentModeId: "low" });
-		expect(
-			harness
-				.updatesOfType("config_option_update")
-				.at(-1)
-				?.configOptions.find((option) => option.category === "thought_level"),
-		).toMatchObject({ currentValue: "low" });
-
-		await harness.client.setSessionMode({ sessionId: response.sessionId, modeId: "medium" });
-		expect(harness.agent.agent.sessions.get(response.sessionId)?.runtime.session.thinkingLevel).toBe("medium");
-		expect(harness.updatesOfType("current_mode_update").at(-1)).toMatchObject({ currentModeId: "medium" });
+		// The removed compatibility alias is now an unknown config id.
+		await expect(
+			harness.client.setSessionConfigOption({ sessionId: response.sessionId, configId: "mode", value: "low" }),
+		).rejects.toMatchObject({ code: -32602 });
+		expect(harness.agent.agent.sessions.get(response.sessionId)?.runtime.session.thinkingLevel).toBe("high");
 	});
 
-	it("refreshes model-specific controls while keeping legacy session modes stable", async () => {
+	it("refreshes model-specific thinking choices after a model change", async () => {
 		harness = await createAcpHarness({
 			models: [
 				{ id: "faux-1", reasoning: false },
@@ -188,17 +151,8 @@ describe("ACP mode (M1)", () => {
 
 		const response = await harness.newSession();
 		const provider = harness.faux.getModel().provider;
-		const advertisedModes = response.modes?.availableModes;
-		expect(advertisedModes?.map((mode) => mode.id)).toEqual([
-			"off",
-			"minimal",
-			"low",
-			"medium",
-			"high",
-			"xhigh",
-			"max",
-		]);
-		expect(response.configOptions?.find((option) => option.category === "mode")).toMatchObject({
+		expect(response.modes ?? null).toBeNull();
+		expect(response.configOptions?.find((option) => option.category === "thought_level")).toMatchObject({
 			options: [{ value: "off" }],
 		});
 
@@ -207,12 +161,12 @@ describe("ACP mode (M1)", () => {
 			configId: "model",
 			value: `${provider}/faux-2`,
 		});
-		expect(reasoningModel.configOptions.find((option) => option.category === "mode")).toMatchObject({
+		expect(reasoningModel.configOptions.find((option) => option.category === "thought_level")).toMatchObject({
 			options: [{ value: "off" }, { value: "minimal" }, { value: "low" }, { value: "medium" }, { value: "high" }],
 		});
 		await harness.client.setSessionConfigOption({
 			sessionId: response.sessionId,
-			configId: "mode",
+			configId: "thought_level",
 			value: "high",
 		});
 		expect(harness.agent.agent.sessions.get(response.sessionId)?.runtime.session.thinkingLevel).toBe("high");
@@ -222,13 +176,13 @@ describe("ACP mode (M1)", () => {
 			configId: "model",
 			value: `${provider}/faux-1`,
 		});
-		expect(nonReasoningModel.configOptions.find((option) => option.category === "mode")).toMatchObject({
+		expect(nonReasoningModel.configOptions.find((option) => option.category === "thought_level")).toMatchObject({
 			currentValue: "off",
 			options: [{ value: "off" }],
 		});
 	});
 
-	it("rejects unsupported model-specific levels and clamps stable legacy modes", async () => {
+	it("rejects unsupported thinking levels", async () => {
 		harness = await createAcpHarness({ models: [{ id: "faux-1", reasoning: false }] });
 		await harness.initialize();
 		const response = await harness.newSession();
@@ -240,15 +194,7 @@ describe("ACP mode (M1)", () => {
 				value: "high",
 			}),
 		).rejects.toMatchObject({ code: -32602 });
-		await expect(
-			harness.client.setSessionConfigOption({ sessionId: response.sessionId, configId: "mode", value: "high" }),
-		).rejects.toMatchObject({ code: -32602 });
-
-		await harness.client.setSessionMode({ sessionId: response.sessionId, modeId: "high" });
 		expect(harness.agent.agent.sessions.get(response.sessionId)?.runtime.session.thinkingLevel).toBe("off");
-		expect(harness.updatesOfType("current_mode_update").at(-1)).toMatchObject({
-			currentModeId: "off",
-		});
 	});
 
 	it("streams agent_message_chunk notifications and resolves with end_turn", async () => {

@@ -5,24 +5,14 @@
  * from different providers remain distinct on the wire.
  */
 
-import type { SessionConfigOption, SessionModeState, SetSessionConfigOptionRequest } from "@agentclientprotocol/sdk";
+import type { SessionConfigOption, SetSessionConfigOptionRequest } from "@agentclientprotocol/sdk";
 import { RequestError } from "@agentclientprotocol/sdk";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AgentSession } from "../../core/agent-session.ts";
 
 const MODEL_CONFIG_ID = "model";
-export const MODE_CONFIG_ID = "mode";
 export const THOUGHT_LEVEL_CONFIG_ID = "thought_level";
-const LEGACY_SESSION_MODE_LEVELS: readonly ThinkingLevel[] = [
-	"off",
-	"minimal",
-	"low",
-	"medium",
-	"high",
-	"xhigh",
-	"max",
-];
 
 function modelReference(model: Model<Api>): string {
 	return `${model.provider}/${model.id}`;
@@ -33,27 +23,12 @@ function thinkingLevelName(level: ThinkingLevel): string {
 }
 
 /**
- * Build legacy ACP session modes for clients that predate thought-level config
- * options. Pi has no permission/sandbox modes, so its established ACP adapter
- * maps this legacy control to the session thinking level.
+ * Build the complete ACP configuration state for the current pi session.
+ *
+ * Pi has no permission/sandbox modes and no longer aliases the ACP mode
+ * controls to its thinking level, so the thinking level is exposed exactly
+ * once, as the `thought_level` config option.
  */
-export function buildSessionModes(session: AgentSession): SessionModeState {
-	return {
-		currentModeId: session.thinkingLevel,
-		availableModes: LEGACY_SESSION_MODE_LEVELS.map((level) => ({
-			id: level,
-			name: thinkingLevelName(level),
-			description: "Reasoning effort for this session.",
-		})),
-	};
-}
-
-/** Resolve a mode advertised through the stable legacy ACP mode list. */
-export function legacySessionModeLevel(modeId: string): ThinkingLevel | undefined {
-	return LEGACY_SESSION_MODE_LEVELS.find((level) => level === modeId);
-}
-
-/** Build the complete ACP configuration state for the current pi session. */
 export async function buildSessionConfigOptions(session: AgentSession): Promise<SessionConfigOption[]> {
 	const currentModel = session.model;
 	const options: SessionConfigOption[] = [];
@@ -79,31 +54,19 @@ export async function buildSessionConfigOptions(session: AgentSession): Promise<
 		});
 	}
 
-	const thinkingOptions = session.getAvailableThinkingLevels().map((level) => ({
-		value: level,
-		name: thinkingLevelName(level),
-		description: null,
-	}));
-	options.push(
-		{
-			id: MODE_CONFIG_ID,
-			name: "Session mode",
-			description: "Compatibility control for the Pi thinking level.",
-			category: "mode",
-			type: "select",
-			currentValue: session.thinkingLevel,
-			options: thinkingOptions,
-		},
-		{
-			id: THOUGHT_LEVEL_CONFIG_ID,
-			name: "Thinking",
-			description: "Reasoning effort for this session.",
-			category: "thought_level",
-			type: "select",
-			currentValue: session.thinkingLevel,
-			options: thinkingOptions,
-		},
-	);
+	options.push({
+		id: THOUGHT_LEVEL_CONFIG_ID,
+		name: "Thinking",
+		description: "Reasoning effort for this session.",
+		category: "thought_level",
+		type: "select",
+		currentValue: session.thinkingLevel,
+		options: session.getAvailableThinkingLevels().map((level) => ({
+			value: level,
+			name: thinkingLevelName(level),
+			description: null,
+		})),
+	});
 
 	return options;
 }
@@ -128,7 +91,7 @@ export async function setSessionConfigOption(
 		return buildSessionConfigOptions(session);
 	}
 
-	if (params.configId === MODE_CONFIG_ID || params.configId === THOUGHT_LEVEL_CONFIG_ID) {
+	if (params.configId === THOUGHT_LEVEL_CONFIG_ID) {
 		const thinkingLevel = session.getAvailableThinkingLevels().find((level) => level === params.value);
 		if (!thinkingLevel) {
 			throw RequestError.invalidParams(params, `Unknown or unavailable thinking level: ${params.value}`);

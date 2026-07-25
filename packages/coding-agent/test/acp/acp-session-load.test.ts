@@ -172,12 +172,8 @@ describe("ACP session/load (M5)", () => {
 			type: "select",
 			currentValue: "high",
 		});
-		expect(loadResponse.configOptions?.find((option) => option.category === "mode")).toMatchObject({
-			id: "mode",
-			type: "select",
-			currentValue: "high",
-		});
-		expect(loadResponse.modes).toMatchObject({ currentModeId: "high" });
+		expect(loadResponse.configOptions?.filter((option) => option.category === "mode")).toEqual([]);
+		expect(loadResponse.modes ?? null).toBeNull();
 	});
 
 	it("replays the completed tool call through the live tool-call mapping", async () => {

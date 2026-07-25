@@ -5,6 +5,10 @@
  * the ACP sessionId is the pi session UUID. `session/new`'s `mcpServers`
  * param is accepted and ignored (pi has no MCP support), and accordingly no
  * `mcpCapabilities` are advertised.
+ *
+ * Pi has no permission/sandbox modes, so no ACP session modes are advertised
+ * and `session/set_mode` is not implemented; the thinking level is a session
+ * config option (`thought_level`), not a mode.
  */
 
 import type {
@@ -24,19 +28,10 @@ import type {
 	PromptResponse,
 	SetSessionConfigOptionRequest,
 	SetSessionConfigOptionResponse,
-	SetSessionModeRequest,
-	SetSessionModeResponse,
 } from "@agentclientprotocol/sdk";
 import { PROTOCOL_VERSION, RequestError } from "@agentclientprotocol/sdk";
 import { promptBlocksToPi } from "./content.ts";
-import {
-	buildSessionConfigOptions,
-	buildSessionModes,
-	legacySessionModeLevel,
-	MODE_CONFIG_ID,
-	setSessionConfigOption,
-	THOUGHT_LEVEL_CONFIG_ID,
-} from "./session-config.ts";
+import { buildSessionConfigOptions, setSessionConfigOption } from "./session-config.ts";
 import { AcpSessionRegistry } from "./session-registry.ts";
 import type { AcpAgentDeps, ClientCaps } from "./types.ts";
 
@@ -76,7 +71,6 @@ export class PiAcpAgent implements Agent {
 		return {
 			sessionId: handle.sessionId,
 			configOptions: await buildSessionConfigOptions(handle.runtime.session),
-			modes: buildSessionModes(handle.runtime.session),
 		};
 	}
 
@@ -93,46 +87,12 @@ export class PiAcpAgent implements Agent {
 		const handle = await this.registry.loadSession({ sessionId: params.sessionId, cwd: params.cwd });
 		return {
 			configOptions: await buildSessionConfigOptions(handle.runtime.session),
-			modes: buildSessionModes(handle.runtime.session),
 		};
-	}
-
-	async setSessionMode(params: SetSessionModeRequest): Promise<SetSessionModeResponse> {
-		const handle = this.registry.require(params.sessionId);
-		const session = handle.runtime.session;
-		const thinkingLevel = legacySessionModeLevel(params.modeId);
-		if (!thinkingLevel) {
-			throw RequestError.invalidParams(params, `Unknown session mode: ${params.modeId}`);
-		}
-
-		session.setThinkingLevel(thinkingLevel);
-		handle.translator.sendUpdate({
-			sessionUpdate: "current_mode_update",
-			currentModeId: session.thinkingLevel,
-		});
-		handle.translator.sendUpdate({
-			sessionUpdate: "config_option_update",
-			configOptions: await buildSessionConfigOptions(session),
-		});
-		await handle.translator.waitForDeliveries();
-		return {};
 	}
 
 	async setSessionConfigOption(params: SetSessionConfigOptionRequest): Promise<SetSessionConfigOptionResponse> {
 		const handle = this.registry.require(params.sessionId);
-		const session = handle.runtime.session;
-		const previousThinkingLevel = session.thinkingLevel;
-		const configOptions = await setSessionConfigOption(session, params);
-		if (
-			params.configId === MODE_CONFIG_ID ||
-			params.configId === THOUGHT_LEVEL_CONFIG_ID ||
-			session.thinkingLevel !== previousThinkingLevel
-		) {
-			handle.translator.sendUpdate({
-				sessionUpdate: "current_mode_update",
-				currentModeId: session.thinkingLevel,
-			});
-		}
+		const configOptions = await setSessionConfigOption(handle.runtime.session, params);
 		handle.translator.sendUpdate({ sessionUpdate: "config_option_update", configOptions });
 		await handle.translator.waitForDeliveries();
 		return { configOptions };

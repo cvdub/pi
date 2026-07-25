@@ -33,7 +33,7 @@ Run this checklist against a real agent-shell session (against the built `dist/c
 
 - [ ] **Model selection.** Open Agent Shell's model picker; it lists every model available to pi. Switch models and confirm the header updates before sending the next prompt.
 - [ ] **Thinking level.** Open Agent Shell's thought-level picker, change the reasoning effort, and confirm the header updates before the next prompt.
-- [ ] **Session mode.** Change Agent Shell's session mode and confirm it changes the same Pi thinking level. Switch between reasoning and non-reasoning models and confirm the available choices refresh. Pi has no permission/sandbox modes, so this compatibility control intentionally aliases thinking, matching the external `pi-acp` adapter.
+- [ ] **No session modes.** Confirm Agent Shell's session-mode control is empty. Pi has no permission/sandbox modes and deliberately does not alias them to thinking, so nothing is advertised there; the thought-level picker is the only thinking control. Switch between reasoning and non-reasoning models and confirm its available choices refresh.
 - [ ] **Streaming text.** Send a prompt; the assistant's reply appears incrementally as it streams, not all at once at the end.
 - [ ] **Separate thought sections.** With a reasoning-capable model, thinking content renders in its own section, distinct from the reply text (`agent_thought_chunk` vs `agent_message_chunk`).
 - [ ] **Tool calls with diffs.** Ask for a file edit; the tool call shows up with a title and, for edit/write, a rendered diff — not just raw JSON arguments.
@@ -44,8 +44,7 @@ Run this checklist against a real agent-shell session (against the built `dist/c
 ## Scope: what's supported
 
 - Model and thinking-level discovery and switching through ACP session configuration (`session/new`, `session/load`, and `session/set_config_option`)
-- Session-mode config mapped to Pi thinking levels (`category: mode`), with model-specific choices refreshed after model changes
-- Stable legacy ACP session modes (`modes` and `session/set_mode`) for compatibility with clients that predate refreshable config options and the external `pi-acp` adapter
+- Model-specific thinking choices refreshed after model changes (`category: thought_level`)
 - Streaming assistant text and thinking (`agent_message_chunk` / `agent_thought_chunk`)
 - Tool-call translation (`tool_call` / `tool_call_update`) with kind/title/locations and diff content for edits and writes
 - fs delegation (`fs/read_text_file` / `fs/write_text_file`), gated on `clientCapabilities.fs`
@@ -55,6 +54,8 @@ Run this checklist against a real agent-shell session (against the built `dist/c
 - Multiple concurrent sessions per connection, each an independent pi session
 
 ### Out of scope
+
+**Session modes are explicitly out of scope.** pi has no permission or sandbox modes, so `session/new` and `session/load` advertise no `modes` and `session/set_mode` is not implemented. An earlier revision (and the external `pi-acp` adapter) aliased the mode control to the thinking level; that made clients label reasoning effort as a "mode", so the alias — both the legacy `modes` list and the duplicate `mode` config option — was removed. Thinking level lives in exactly one place: the `thought_level` config option. Clients that predate `session/set_config_option` therefore have no way to change it.
 
 **MCP passthrough is explicitly out of scope.** pi has no MCP client of its own. `session/new`'s `mcpServers` parameter is accepted and silently ignored, and no `mcpCapabilities` are advertised in `initialize` — an honest reflection of what the agent can actually do, not an oversight.
 
