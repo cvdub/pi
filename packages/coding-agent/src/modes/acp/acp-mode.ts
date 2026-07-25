@@ -22,9 +22,12 @@ import {
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
 } from "../../core/output-guard.ts";
+import type { ToolsOptions } from "../../core/tools/index.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { PiAcpAgent } from "./acp-agent.ts";
-import type { AcpAgentDeps, AcpModeOptions } from "./types.ts";
+import { createAcpFsToolsOptions } from "./fs-delegation.ts";
+import { acpTerminalToolsOptions } from "./terminal-delegation.ts";
+import type { AcpAgentDeps, AcpModeOptions, AcpToolsOptionsContext } from "./types.ts";
 
 export interface StartAcpAgentResult {
 	/** The SDK connection (client-bound requests/notifications). */
@@ -59,6 +62,19 @@ export function startAcpAgent(stream: Stream, deps: AcpAgentDeps): StartAcpAgent
 }
 
 /**
+ * Default delegation for real ACP sessions: fs (M3) plus terminal (M4).
+ *
+ * Each half contributes a disjoint slice of ToolsOptions — fs owns
+ * `read`/`edit`/`write`, terminal owns `bash` — so a shallow merge composes
+ * them without either clobbering the other. Both halves gate themselves on the
+ * matching `clientCapabilities` entry and fall back to local operations when it
+ * is absent, so this is safe to install unconditionally.
+ */
+export function createAcpToolsOptions(context: AcpToolsOptionsContext): ToolsOptions {
+	return { ...createAcpFsToolsOptions(context), ...acpTerminalToolsOptions(context) };
+}
+
+/**
  * Run in ACP mode over stdio.
  *
  * The bootstrap runtime main.ts built is disposed immediately: ACP creates a
@@ -84,6 +100,11 @@ export async function runAcpMode(runtimeHost: AgentSessionRuntime, options: AcpM
 
 	const { connection, dispose } = startAcpAgent(stream, {
 		...options,
+		// Real ACP sessions (main.ts's runAcpMode call) don't supply
+		// createToolsOptions, so default to the combined fs (M3) + terminal (M4)
+		// delegation here. Both halves are capability-gated with local
+		// fallbacks. Callers that inject their own (e.g. tests) are untouched.
+		createToolsOptions: options.createToolsOptions ?? createAcpToolsOptions,
 		onShutdownRequested: () => {
 			options.onShutdownRequested?.();
 			void shutdown(0);
