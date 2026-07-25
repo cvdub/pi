@@ -16,6 +16,8 @@ import type {
 	ClientCapabilities,
 	InitializeRequest,
 	InitializeResponse,
+	LoadSessionRequest,
+	LoadSessionResponse,
 	NewSessionRequest,
 	NewSessionResponse,
 	PromptRequest,
@@ -62,8 +64,19 @@ export class PiAcpAgent implements Agent {
 		return { sessionId: handle.sessionId };
 	}
 
-	// loadSession arrives in M5 (history-replay.ts). Until then the SDK
-	// responds with method-not-found for session/load.
+	/**
+	 * Resume a previously created session (`loadSession: true` is advertised in
+	 * `initialize`).
+	 *
+	 * `params.mcpServers` is ignored like `session/new`'s. The awaited registry
+	 * call streams the entire replayed history before it resolves, which is the
+	 * ordering ACP requires: a client that renders on `session/update` has the
+	 * whole transcript by the time this response reaches it.
+	 */
+	async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
+		await this.registry.loadSession({ sessionId: params.sessionId, cwd: params.cwd });
+		return {};
+	}
 
 	async prompt(params: PromptRequest): Promise<PromptResponse> {
 		const handle = this.registry.require(params.sessionId);

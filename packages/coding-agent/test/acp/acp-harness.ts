@@ -25,6 +25,10 @@
  *   supply fs/terminal-backed operations here in production code).
  * - `responses` / `faux`: script model output, including tool calls
  *   (`fauxToolCall`) and context-capturing response factories.
+ * - `dirs`: run over an existing directory set instead of fresh temp ones, so a
+ *   second harness can reconnect to the sessions a first one wrote (M5's
+ *   `session/load`). `harness.wire` then records the raw agent -> client
+ *   messages for ordering assertions.
  *
  * Always `await harness.dispose()` in `afterEach`: faux provider registration
  * is process-global and the harness creates real temp directories.
@@ -34,12 +38,14 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+	type AnyMessage,
 	type Client,
 	type ClientCapabilities,
 	ClientSideConnection,
 	type ContentBlock,
 	type InitializeRequest,
 	type InitializeResponse,
+	type LoadSessionResponse,
 	type NewSessionResponse,
 	PROTOCOL_VERSION,
 	type PromptResponse,
@@ -81,6 +87,22 @@ export interface AcpHarnessOptions {
 	 * (`available_commands_update`) or exercise the extension UI bridge.
 	 */
 	extensionFactories?: ExtensionFactory[];
+	/**
+	 * Reuse an existing set of directories instead of creating fresh temp ones.
+	 *
+	 * This is how a "reconnect" is simulated (M5): dispose one harness, then
+	 * build a second one over the same `sessionDir`/`cwd` and `session/load` a
+	 * session the first one wrote. A harness given `dirs` never removes them on
+	 * dispose — the harness that created them does.
+	 */
+	dirs?: AcpHarnessDirs;
+}
+
+/** Directory set a harness runs against (see {@link AcpHarnessOptions.dirs}). */
+export interface AcpHarnessDirs {
+	cwd: string;
+	sessionDir: string;
+	agentDir: string;
 }
 
 /** The two session updates that carry tool-call state. */
@@ -106,12 +128,25 @@ export interface AcpHarness {
 	sessionDir: string;
 	/** Temp agent config directory. */
 	agentDir: string;
+	/** The harness's directory set (handy for reconnecting a second harness). */
+	dirs: AcpHarnessDirs;
 	/** All session/update notifications in arrival order. */
 	notifications: SessionNotification[];
+	/**
+	 * Every JSON-RPC message the agent wrote to the client, in wire order,
+	 * recorded before the client's connection dispatches it.
+	 *
+	 * This is the ground truth for ordering assertions ("the history was on the
+	 * wire before the response"), independent of how the client's dispatcher
+	 * interleaves async notification handlers with response resolution.
+	 */
+	wire: AnyMessage[];
 	/** Send initialize. Overrides are merged over the harness defaults. */
 	initialize(overrides?: Partial<InitializeRequest>): Promise<InitializeResponse>;
 	/** Send session/new (does not initialize implicitly). */
 	newSession(overrides?: { cwd?: string }): Promise<NewSessionResponse>;
+	/** Send session/load (does not initialize implicitly). */
+	loadSession(sessionId: string, overrides?: { cwd?: string }): Promise<LoadSessionResponse>;
 	/** initialize (if not yet done) + session/new; returns the new session id. */
 	openSession(): Promise<string>;
 	/** Send session/prompt with plain text or explicit content blocks. */
@@ -142,9 +177,12 @@ interface NotificationWaiter {
 
 export async function createAcpHarness(options: AcpHarnessOptions = {}): Promise<AcpHarness> {
 	const root = join(tmpdir(), `pi-acp-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-	const cwd = join(root, "cwd");
-	const sessionDir = join(root, "sessions");
-	const agentDir = join(root, "agent");
+	const dirs: AcpHarnessDirs = options.dirs ?? {
+		cwd: join(root, "cwd"),
+		sessionDir: join(root, "sessions"),
+		agentDir: join(root, "agent"),
+	};
+	const { cwd, sessionDir, agentDir } = dirs;
 	mkdirSync(cwd, { recursive: true });
 	mkdirSync(sessionDir, { recursive: true });
 	mkdirSync(agentDir, { recursive: true });
@@ -209,9 +247,16 @@ export async function createAcpHarness(options: AcpHarnessOptions = {}): Promise
 
 	// Two crossed TransformStreams: what the agent writes, the client reads,
 	// and vice versa. The SDK Stream carries parsed JSON-RPC messages, so no
-	// ndjson framing is needed in-process.
+	// ndjson framing is needed in-process. The agent -> client direction also
+	// records every message so tests can assert wire order.
+	const wire: AnyMessage[] = [];
 	const clientToAgent = new TransformStream();
-	const agentToClient = new TransformStream();
+	const agentToClient = new TransformStream<AnyMessage, AnyMessage>({
+		transform: (message, controller) => {
+			wire.push(message);
+			controller.enqueue(message);
+		},
+	});
 	const agentStream: Stream = { writable: agentToClient.writable, readable: clientToAgent.readable };
 	const clientStream: Stream = { writable: clientToAgent.writable, readable: agentToClient.readable };
 
@@ -257,6 +302,10 @@ export async function createAcpHarness(options: AcpHarnessOptions = {}): Promise
 
 	const newSession = async (sessionOverrides?: { cwd?: string }): Promise<NewSessionResponse> => {
 		return client.newSession({ cwd: sessionOverrides?.cwd ?? cwd, mcpServers: [] });
+	};
+
+	const loadSession = async (sessionId: string, sessionOverrides?: { cwd?: string }): Promise<LoadSessionResponse> => {
+		return client.loadSession({ sessionId, cwd: sessionOverrides?.cwd ?? cwd, mcpServers: [] });
 	};
 
 	const openSession = async (): Promise<string> => {
@@ -333,7 +382,8 @@ export async function createAcpHarness(options: AcpHarnessOptions = {}): Promise
 	const dispose = async (): Promise<void> => {
 		await agent.dispose();
 		faux.unregister();
-		if (existsSync(root)) {
+		// Borrowed directories belong to the harness that created them.
+		if (!options.dirs && existsSync(root)) {
 			rmSync(root, { recursive: true, force: true });
 		}
 	};
@@ -345,9 +395,12 @@ export async function createAcpHarness(options: AcpHarnessOptions = {}): Promise
 		cwd,
 		sessionDir,
 		agentDir,
+		dirs,
 		notifications,
+		wire,
 		initialize,
 		newSession,
+		loadSession,
 		openSession,
 		prompt,
 		cancel,
