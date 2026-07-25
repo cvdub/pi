@@ -13,6 +13,7 @@ import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import type { CreateAgentSessionResult } from "./sdk.ts";
 import { assertSessionCwdExists } from "./session-cwd.ts";
 import { SessionManager } from "./session-manager.ts";
+import type { ToolsOptions } from "./tools/index.ts";
 
 /**
  * Result returned by runtime creation.
@@ -38,6 +39,8 @@ export type CreateAgentSessionRuntimeFactory = (options: {
 	sessionManager: SessionManager;
 	sessionStartEvent?: SessionStartEvent;
 	projectTrustContext?: ProjectTrustContext;
+	/** Base tool behavior overrides (e.g. ACP fs/terminal delegation), merged over settings-derived defaults. */
+	toolsOptions?: ToolsOptions;
 }) => Promise<CreateAgentSessionRuntimeResult>;
 
 /**

@@ -14,6 +14,7 @@ import {
 import { type CreateAgentSessionOptions, type CreateAgentSessionResult, createAgentSession } from "./sdk.ts";
 import type { SessionManager } from "./session-manager.ts";
 import { SettingsManager } from "./settings-manager.ts";
+import type { ToolsOptions } from "./tools/index.ts";
 
 /**
  * Non-fatal issues collected while creating services or sessions.
@@ -62,6 +63,8 @@ export interface CreateAgentSessionFromServicesOptions {
 	excludeTools?: CreateAgentSessionOptions["excludeTools"];
 	noTools?: CreateAgentSessionOptions["noTools"];
 	customTools?: ToolDefinition[];
+	/** Base tool behavior overrides (e.g. ACP fs/terminal delegation), merged over settings-derived defaults. */
+	toolsOptions?: ToolsOptions;
 }
 
 /**
@@ -216,6 +219,7 @@ export async function createAgentSessionFromServices(
 		excludeTools: options.excludeTools,
 		noTools: options.noTools,
 		customTools: options.customTools,
+		toolsOptions: options.toolsOptions,
 		sessionStartEvent: options.sessionStartEvent,
 	});
 }

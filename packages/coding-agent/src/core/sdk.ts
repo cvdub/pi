@@ -27,6 +27,7 @@ import {
 	createReadTool,
 	createWriteTool,
 	type ToolName,
+	type ToolsOptions,
 	withFileMutationQueue,
 } from "./tools/index.ts";
 
@@ -73,6 +74,11 @@ export interface CreateAgentSessionOptions {
 	excludeTools?: string[];
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
+	/**
+	 * Base tool behavior overrides (e.g. ACP fs/terminal delegation).
+	 * Merged over settings-derived defaults when building the built-in tools.
+	 */
+	toolsOptions?: ToolsOptions;
 
 	/** Resource loader. When omitted, DefaultResourceLoader is used. */
 	resourceLoader?: ResourceLoader;
@@ -388,6 +394,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		initialActiveToolNames,
 		allowedToolNames,
 		excludedToolNames,
+		toolsOptions: options.toolsOptions,
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
 	});

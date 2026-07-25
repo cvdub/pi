@@ -333,10 +333,17 @@ export {
 export { type MainOptions, main } from "./main.ts";
 // Run modes for programmatic SDK usage
 export {
+	type AcpAgentDeps,
+	type AcpModeOptions,
+	type AcpSessionHandle,
+	AcpSessionRegistry,
+	type AcpToolsOptionsContext,
+	type ClientCaps,
 	InteractiveMode,
 	type InteractiveModeOptions,
 	type JsonAgentSessionEvent,
 	type ModelInfo,
+	PiAcpAgent,
 	type PrintModeOptions,
 	RpcClient,
 	type RpcClientOptions,
@@ -346,8 +353,11 @@ export {
 	type RpcExtensionUIResponse,
 	type RpcResponse,
 	type RpcSessionState,
+	runAcpMode,
 	runPrintMode,
 	runRpcMode,
+	type StartAcpAgentResult,
+	startAcpAgent,
 } from "./modes/index.ts";
 // UI components for extensions
 export {
