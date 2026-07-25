@@ -22,9 +22,12 @@ import type {
 	NewSessionResponse,
 	PromptRequest,
 	PromptResponse,
+	SetSessionConfigOptionRequest,
+	SetSessionConfigOptionResponse,
 } from "@agentclientprotocol/sdk";
 import { PROTOCOL_VERSION, RequestError } from "@agentclientprotocol/sdk";
 import { promptBlocksToPi } from "./content.ts";
+import { buildSessionConfigOptions, setSessionConfigOption } from "./session-config.ts";
 import { AcpSessionRegistry } from "./session-registry.ts";
 import type { AcpAgentDeps, ClientCaps } from "./types.ts";
 
@@ -61,7 +64,10 @@ export class PiAcpAgent implements Agent {
 	async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
 		// params.mcpServers is intentionally ignored (no MCP support in pi).
 		const handle = await this.registry.createSession({ cwd: params.cwd });
-		return { sessionId: handle.sessionId };
+		return {
+			sessionId: handle.sessionId,
+			configOptions: await buildSessionConfigOptions(handle.runtime.session),
+		};
 	}
 
 	/**
@@ -74,8 +80,13 @@ export class PiAcpAgent implements Agent {
 	 * whole transcript by the time this response reaches it.
 	 */
 	async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
-		await this.registry.loadSession({ sessionId: params.sessionId, cwd: params.cwd });
-		return {};
+		const handle = await this.registry.loadSession({ sessionId: params.sessionId, cwd: params.cwd });
+		return { configOptions: await buildSessionConfigOptions(handle.runtime.session) };
+	}
+
+	async setSessionConfigOption(params: SetSessionConfigOptionRequest): Promise<SetSessionConfigOptionResponse> {
+		const handle = this.registry.require(params.sessionId);
+		return { configOptions: await setSessionConfigOption(handle.runtime.session, params) };
 	}
 
 	async prompt(params: PromptRequest): Promise<PromptResponse> {

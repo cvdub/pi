@@ -120,7 +120,7 @@ describe("ACP session/load (M5)", () => {
 		// Captured in the first continuation after the request resolves: if any
 		// part of the history were still queued, this count would fall short.
 		let notificationsAtResolve = -1;
-		await reconnected.loadSession(sessionId).then((response) => {
+		const loadResponse = await reconnected.loadSession(sessionId).then((response) => {
 			notificationsAtResolve = reconnected.notifications.length;
 			return response;
 		});
@@ -161,6 +161,11 @@ describe("ACP session/load (M5)", () => {
 		expect(reconnected.chunkText("user_message_chunk")).toBe(USER_TEXT);
 		expect(reconnected.chunkText("agent_thought_chunk")).toBe(THOUGHT_TEXT);
 		expect(reconnected.chunkText("agent_message_chunk")).toBe(`${PREAMBLE_TEXT}${FINAL_TEXT}`);
+		expect(loadResponse.configOptions?.find((option) => option.category === "model")).toMatchObject({
+			id: "model",
+			type: "select",
+			currentValue: `${reconnected.faux.getModel().provider}/faux-1`,
+		});
 	});
 
 	it("replays the completed tool call through the live tool-call mapping", async () => {

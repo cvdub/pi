@@ -31,6 +31,7 @@ If pi isn't on `agent-shell`'s `exec-path`, use an absolute path to the `pi` bin
 
 Run this checklist against a real agent-shell session (against the built `dist/cli.js --mode acp`, not `tsx`) before trusting a change to ACP mode — the automated tests below cover the protocol machinery in isolation, but they use a faux model and never exercise a real editor:
 
+- [ ] **Model selection.** Open Agent Shell's model picker; it lists every model available to pi. Switch models and confirm the header updates before sending the next prompt.
 - [ ] **Streaming text.** Send a prompt; the assistant's reply appears incrementally as it streams, not all at once at the end.
 - [ ] **Separate thought sections.** With a reasoning-capable model, thinking content renders in its own section, distinct from the reply text (`agent_thought_chunk` vs `agent_message_chunk`).
 - [ ] **Tool calls with diffs.** Ask for a file edit; the tool call shows up with a title and, for edit/write, a rendered diff — not just raw JSON arguments.
@@ -40,6 +41,7 @@ Run this checklist against a real agent-shell session (against the built `dist/c
 
 ## Scope: what's supported
 
+- Model discovery and switching through ACP session configuration (`session/new`, `session/load`, and `session/set_config_option`)
 - Streaming assistant text and thinking (`agent_message_chunk` / `agent_thought_chunk`)
 - Tool-call translation (`tool_call` / `tool_call_update`) with kind/title/locations and diff content for edits and writes
 - fs delegation (`fs/read_text_file` / `fs/write_text_file`), gated on `clientCapabilities.fs`

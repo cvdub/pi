@@ -61,6 +61,43 @@ describe("ACP mode (M1)", () => {
 		expect(sessionFiles.some((file) => file.endsWith(`_${sessionId}.jsonl`))).toBe(true);
 	});
 
+	it("advertises and changes available pi models through ACP session config", async () => {
+		harness = await createAcpHarness({
+			models: [
+				{ id: "faux-1", name: "Faux One", reasoning: true },
+				{ id: "faux-2", name: "Faux Two", reasoning: false },
+			],
+		});
+		await harness.initialize();
+
+		const response = await harness.newSession();
+		const modelOption = response.configOptions?.find((option) => option.category === "model");
+		const provider = harness.faux.getModel().provider;
+
+		expect(modelOption).toMatchObject({
+			id: "model",
+			name: "Model",
+			category: "model",
+			type: "select",
+			currentValue: `${provider}/faux-1`,
+			options: [
+				{ value: `${provider}/faux-1`, name: "Faux One" },
+				{ value: `${provider}/faux-2`, name: "Faux Two" },
+			],
+		});
+
+		const changed = await harness.client.setSessionConfigOption({
+			sessionId: response.sessionId,
+			configId: "model",
+			value: `${provider}/faux-2`,
+		});
+
+		expect(harness.agent.agent.sessions.get(response.sessionId)?.runtime.session.model?.id).toBe("faux-2");
+		expect(changed.configOptions.find((option) => option.category === "model")).toMatchObject({
+			currentValue: `${provider}/faux-2`,
+		});
+	});
+
 	it("streams agent_message_chunk notifications and resolves with end_turn", async () => {
 		const text = "Hello from the faux model. It is a fine day for streaming.";
 		harness = await createAcpHarness({ responses: [fauxAssistantMessage(text)] });
