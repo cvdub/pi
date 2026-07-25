@@ -25,6 +25,7 @@ import {
 import { SessionManager } from "../../core/session-manager.ts";
 import { resolvePath } from "../../utils/paths.ts";
 import { AcpEventTranslator, PromptTurnTracker } from "./event-translator.ts";
+import { createAcpExtensionUIContext } from "./extension-ui.ts";
 import { streamSessionHistory } from "./history-replay.ts";
 import { AcpToolCallMapper } from "./tool-call-mapper.ts";
 import type { AcpAgentDeps, AcpSessionHandle, ClientCaps } from "./types.ts";
@@ -228,8 +229,11 @@ export class AcpSessionRegistry {
 		handle.toolCalls.dispose();
 		await session.bindExtensions({
 			mode: "acp",
-			// TODO(M6): supply an ACP-backed uiContext (extension-ui.ts) so
-			// confirm/select round-trip through session/request_permission.
+			// Rebuilt on every bind/rebind (never captured once) so it always
+			// closes over the current handle's sessionId; the connection and
+			// sessionId themselves don't change across a rebind, but the context
+			// object is disposable per-bind by construction.
+			uiContext: createAcpExtensionUIContext({ connection: this.connection, sessionId: handle.sessionId }),
 			commandContextActions: {
 				waitForIdle: () => session.waitForIdle(),
 				newSession: async (options) => handle.runtime.newSession(options),
