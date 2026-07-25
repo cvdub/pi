@@ -38,6 +38,7 @@ Run this checklist against a real agent-shell session (against the built `dist/c
 - [ ] **Separate thought sections.** With a reasoning-capable model, thinking content renders in its own section, distinct from the reply text (`agent_thought_chunk` vs `agent_message_chunk`).
 - [ ] **Tool calls with diffs.** Ask for a file edit; the tool call shows up with a title and, for edit/write, a rendered diff — not just raw JSON arguments.
 - [ ] **Terminal delegation on a bash command.** Ask the agent to run a shell command. With agent-shell's terminal capability advertised, the command runs in a client-owned terminal (`terminal/create`/`terminal/output`/`terminal/wait_for_exit`), not silently in a detached pi subprocess. Killing the buffer mid-command should tear the terminal down cleanly (no orphaned process, no hang on exit).
+- [ ] **Usage display.** After a turn, `M-x agent-shell-show-usage` reports non-zero tokens and a context figure; with `agent-shell-show-context-usage-indicator` set (the default), the context indicator appears and tracks the window across turns. Resume a session and confirm the indicator is populated before the first prompt of the new connection.
 - [ ] **Kill buffer + resume via `session/load`.** Kill the agent-shell buffer mid-session, then reopen and resume the same session. The prior transcript replays before the client can prompt, and a follow-up prompt continues with the right context.
 - [ ] **`--approve` for project trust.** In an untrusted project directory, start pi without `--approve` and confirm project-scoped resources (extensions, prompt templates, etc.) are skipped with a warning on stderr; then restart with `--approve` and confirm they load. ACP mode has no interactive trust prompt — `--approve` (or one prior interactive/trusted run of pi in that directory) is the only headless way to trust a project.
 
@@ -51,7 +52,19 @@ Run this checklist against a real agent-shell session (against the built `dist/c
 - Terminal delegation (`terminal/*`), gated on `clientCapabilities.terminal`
 - Extension UI bridge: `ctx.ui.confirm` / `ctx.ui.select` round-trip through `session/request_permission`
 - `session/load` with full transcript replay, and `available_commands_update` for extension commands, prompt templates, and skills
+- Usage reporting: cumulative token counts on the `session/prompt` response, plus `usage_update` notifications carrying context fill and session cost
 - Multiple concurrent sessions per connection, each an independent pi session
+
+### Usage reporting
+
+ACP splits usage across two channels, and clients read them independently — agent-shell renders its context indicator from the notification and its token breakdown from the response — so pi emits both:
+
+- **`usage_update` notification.** Context tokens and window size, plus cumulative cost in USD. Sent when a turn settles and again after `session/load` replay, so a resumed session shows context before its first prompt. Identical consecutive snapshots are dropped: a turn settles twice internally (once on `agent_settled`, once when the prompt call resolves), and turns that run no model at all — extension slash commands — move no counters.
+- **`usage` on the `session/prompt` response.** Cumulative `totalTokens` / `inputTokens` / `outputTokens` / `cachedReadTokens` for the session, with `thoughtTokens` included only when a provider reported a reasoning breakdown.
+
+Both come from `AgentSession.getSessionStats()`, whose totals span every entry ever written to the session — including history compaction dropped — so they reflect what was actually billed rather than what is currently in context. pi buckets cache traffic separately from uncached input, so `inputTokens` is uncached input only and `totalTokens` is the sum of all four buckets.
+
+Two values can read as zero rather than absent: `size` is 0 when no model is selected or the model declares no context window, and `used` is 0 between a compaction and the next assistant response, when the only usage pi could read describes the pre-compaction context. The following turn overwrites it with a real measurement.
 
 ### Out of scope
 
@@ -81,5 +94,5 @@ Net effect: watch a session live, then reload it, and the reloaded transcript ca
 
 ## Automated coverage
 
-- `packages/coding-agent/test/acp/` — in-process protocol tests against a faux model (mode plumbing, tool-call translation, fs/terminal delegation, session/load + replay, extension UI bridge).
+- `packages/coding-agent/test/acp/` — in-process protocol tests against a faux model (mode plumbing, tool-call translation, fs/terminal delegation, session/load + replay, extension UI bridge, usage reporting).
 - `packages/coding-agent/test/acp/acp-stdio-smoke.test.ts` — the end-to-end gate: spawns the built `dist/cli.js --mode acp` as a real child process, pipes a raw ndjson `initialize` request into stdin, and asserts every line on stdout parses as JSON-RPC (stray output on stdout corrupts the protocol stream for every client). Requires `npm run build` to have run first.

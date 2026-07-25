@@ -7,7 +7,12 @@
  * {@link AcpToolEventSink} seam that M2's tool-call-mapper fills in.
  */
 
-import type { StopReason as AcpStopReason, SessionNotification, SessionUpdate } from "@agentclientprotocol/sdk";
+import type {
+	StopReason as AcpStopReason,
+	SessionNotification,
+	SessionUpdate,
+	UsageUpdate,
+} from "@agentclientprotocol/sdk";
 import type { AssistantMessageEvent } from "@earendil-works/pi-ai";
 import type { AgentSessionEvent } from "../../core/agent-session.ts";
 import { textBlock } from "./content.ts";
@@ -132,6 +137,8 @@ export interface AcpEventTranslatorOptions {
 	tracker: PromptTurnTracker;
 	/** Reports whether the current AgentSession is idle (no active run). */
 	isSessionIdle: () => boolean;
+	/** Snapshots context/cost for the `usage_update` sent at each settle. */
+	usageUpdate?: () => UsageUpdate;
 	/** M2 seam: receives all tool-related events. */
 	toolEventSink?: AcpToolEventSink;
 }
@@ -148,14 +155,18 @@ export class AcpEventTranslator {
 	private readonly sendNotification: (notification: SessionNotification) => Promise<void>;
 	private readonly tracker: PromptTurnTracker;
 	private readonly isSessionIdle: () => boolean;
+	private readonly usageUpdate?: () => UsageUpdate;
 	private readonly toolEventSink?: AcpToolEventSink;
 	private deliveryTail: Promise<void> = Promise.resolve();
+	/** Last `usage_update` payload sent, so identical snapshots can be dropped. */
+	private lastUsageFingerprint: string | undefined;
 
 	constructor(options: AcpEventTranslatorOptions) {
 		this.sessionId = options.sessionId;
 		this.sendNotification = options.sendNotification;
 		this.tracker = options.tracker;
 		this.isSessionIdle = options.isSessionIdle;
+		this.usageUpdate = options.usageUpdate;
 		this.toolEventSink = options.toolEventSink;
 	}
 
@@ -206,6 +217,7 @@ export class AcpEventTranslator {
 	 */
 	settleIfIdle(): void {
 		const snapshot = this.tracker.snapshot();
+		this.sendUsageUpdate();
 		void this.waitForDeliveries().then(() => {
 			if (this.isSessionIdle()) {
 				this.tracker.settleSnapshot(snapshot);
@@ -213,8 +225,34 @@ export class AcpEventTranslator {
 		});
 	}
 
+	/**
+	 * Queue a `usage_update` reflecting the session's current context and cost.
+	 *
+	 * Queued (not awaited) so it joins the same ordered tail as everything else:
+	 * settles flush the tail before resolving their prompts, which is what makes
+	 * the notification reach the client ahead of the `session/prompt` response.
+	 *
+	 * Unchanged snapshots are dropped. A normal turn settles twice — once from
+	 * `agent_settled` and once when `session.prompt()` resolves — and turns that
+	 * run no model at all (extension slash commands) move no counters, so
+	 * without this the client would see duplicate updates for every prompt.
+	 */
+	sendUsageUpdate(): void {
+		const usage = this.usageUpdate?.();
+		if (!usage) {
+			return;
+		}
+		const fingerprint = `${usage.used}/${usage.size}/${usage.cost?.amount ?? ""}${usage.cost?.currency ?? ""}`;
+		if (fingerprint === this.lastUsageFingerprint) {
+			return;
+		}
+		this.lastUsageFingerprint = fingerprint;
+		this.sendUpdate({ sessionUpdate: "usage_update", ...usage });
+	}
+
 	private settle(): void {
 		const snapshot = this.tracker.snapshot();
+		this.sendUsageUpdate();
 		void this.waitForDeliveries().then(() => {
 			this.tracker.settleSnapshot(snapshot);
 		});

@@ -6,6 +6,8 @@ export interface UsageTotals {
 	output: number;
 	cacheRead: number;
 	cacheWrite: number;
+	/** Reasoning tokens, when the provider reports them. Subset of `output`, never added to it. */
+	reasoning: number;
 	cost: number;
 }
 
@@ -15,6 +17,7 @@ export function createUsageTotals(): UsageTotals {
 		output: 0,
 		cacheRead: 0,
 		cacheWrite: 0,
+		reasoning: 0,
 		cost: 0,
 	};
 }
@@ -24,6 +27,7 @@ export function addUsageToTotals(totals: UsageTotals, usage: Usage): void {
 	totals.output += usage.output;
 	totals.cacheRead += usage.cacheRead;
 	totals.cacheWrite += usage.cacheWrite;
+	totals.reasoning += usage.reasoning ?? 0;
 	totals.cost += usage.cost.total;
 }
 

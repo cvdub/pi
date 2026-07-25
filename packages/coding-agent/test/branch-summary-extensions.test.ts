@@ -49,7 +49,7 @@ describe("Branch summary extensions", () => {
 		expect(summaryEntry?.usage).toEqual(usage);
 
 		const stats = harness.session.getSessionStats();
-		expect(stats.tokens).toEqual({ input: 12, output: 22, cacheRead: 30, cacheWrite: 40, total: 104 });
+		expect(stats.tokens).toEqual({ input: 12, output: 22, cacheRead: 30, cacheWrite: 40, reasoning: 0, total: 104 });
 		expect(stats.cost).toBe(1);
 	});
 });

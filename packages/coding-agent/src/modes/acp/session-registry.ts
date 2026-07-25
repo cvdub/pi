@@ -29,6 +29,7 @@ import { createAcpExtensionUIContext } from "./extension-ui.ts";
 import { streamSessionHistory } from "./history-replay.ts";
 import { AcpToolCallMapper } from "./tool-call-mapper.ts";
 import type { AcpAgentDeps, AcpSessionHandle, ClientCaps } from "./types.ts";
+import { buildUsageUpdate } from "./usage.ts";
 
 export class AcpSessionRegistry {
 	private readonly connection: AgentSideConnection;
@@ -194,6 +195,11 @@ export class AcpSessionRegistry {
 			cwd: handle.runtime.cwd,
 			translator: handle.translator,
 		});
+		// A resumed session already has context and cost on disk; without this the
+		// client would show nothing until the first prompt of the new connection
+		// settles.
+		handle.translator.sendUsageUpdate();
+		await handle.translator.waitForDeliveries();
 	}
 
 	/**
@@ -219,6 +225,7 @@ export class AcpSessionRegistry {
 			// `runtime.session` always points at the current session, also after
 			// extension-driven replacement.
 			isSessionIdle: () => runtime.session.isIdle,
+			usageUpdate: () => buildUsageUpdate(runtime.session),
 			toolEventSink: toolCalls,
 		});
 		deliver = translator;

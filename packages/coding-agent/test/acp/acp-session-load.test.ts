@@ -149,7 +149,9 @@ describe("ACP session/load (M5)", () => {
 		expect(exchange.filter(isSessionUpdate)).toHaveLength(notificationsAtResolve);
 
 		// Every replayed update, in transcript order. `available_commands_update`
-		// leads because a loaded session is bound exactly like a created one.
+		// leads because a loaded session is bound exactly like a created one;
+		// `usage_update` trails it, carrying the resumed session's context and
+		// cost so the client has them before its first prompt.
 		expect(reconnected.notifications.map((notification) => notification.update.sessionUpdate)).toEqual([
 			"available_commands_update",
 			"user_message_chunk",
@@ -157,6 +159,7 @@ describe("ACP session/load (M5)", () => {
 			"agent_message_chunk",
 			"tool_call",
 			"agent_message_chunk",
+			"usage_update",
 		]);
 		expect(reconnected.notifications.every((notification) => notification.sessionId === sessionId)).toBe(true);
 		expect(reconnected.chunkText("user_message_chunk")).toBe(USER_TEXT);

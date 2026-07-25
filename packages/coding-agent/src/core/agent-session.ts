@@ -277,6 +277,8 @@ export interface SessionStats {
 		output: number;
 		cacheRead: number;
 		cacheWrite: number;
+		/** Reasoning tokens, when reported. Subset of `output`, so excluded from `total`. */
+		reasoning: number;
 		total: number;
 	};
 	cost: number;
@@ -3172,6 +3174,7 @@ export class AgentSession {
 				output: usageTotals.output,
 				cacheRead: usageTotals.cacheRead,
 				cacheWrite: usageTotals.cacheWrite,
+				reasoning: usageTotals.reasoning,
 				total: usageTotals.input + usageTotals.output + usageTotals.cacheRead + usageTotals.cacheWrite,
 			},
 			cost: usageTotals.cost,

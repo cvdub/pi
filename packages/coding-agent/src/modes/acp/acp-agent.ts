@@ -34,6 +34,7 @@ import { promptBlocksToPi } from "./content.ts";
 import { buildSessionConfigOptions, setSessionConfigOption } from "./session-config.ts";
 import { AcpSessionRegistry } from "./session-registry.ts";
 import type { AcpAgentDeps, ClientCaps } from "./types.ts";
+import { buildAcpUsage } from "./usage.ts";
 
 export class PiAcpAgent implements Agent {
 	private readonly registry: AcpSessionRegistry;
@@ -138,7 +139,11 @@ export class PiAcpAgent implements Agent {
 				},
 			);
 
-		return { stopReason: await turn.promise };
+		const stopReason = await turn.promise;
+		// Read the session off the handle again rather than reusing the local
+		// binding: an extension command (/new, fork, /resume) may have replaced it
+		// during the turn, and the usage the client asked for is the live one's.
+		return { stopReason, usage: buildAcpUsage(handle.runtime.session) };
 	}
 
 	async cancel(params: CancelNotification): Promise<void> {
