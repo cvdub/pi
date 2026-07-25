@@ -78,11 +78,27 @@ export class PromptTurnTracker {
 				if (this.pending.delete(registered)) {
 					registered.reject(error);
 				}
+				// A cancel that never reaches a settle must not poison the next
+				// turn. `session.abort()` on a session that has not started running
+				// resolves without emitting `agent_settled`, so a cancel racing a
+				// preflight failure would otherwise leave `cancelled` set and make
+				// the *following* prompt report `cancelled` without being cancelled.
+				if (this.pending.size === 0) {
+					this.cancelled = false;
+				}
 			},
 		};
 	}
 
-	/** Mark the in-flight turn as cancelled; the next settle resolves `cancelled`. */
+	/**
+	 * Mark the in-flight turn as cancelled; the next settle resolves `cancelled`.
+	 *
+	 * Pre-marking is what lets the prompt resolve `cancelled` *after* the final
+	 * updates flush rather than racing them. The trade-off: a prompt that
+	 * registers between this call and the settle joins that settle's snapshot and
+	 * is reported `cancelled` too, even though its own text may never have run.
+	 * That is inherent to cancelling a turn the client has already given up on.
+	 */
 	markCancelled(): void {
 		this.cancelled = true;
 	}

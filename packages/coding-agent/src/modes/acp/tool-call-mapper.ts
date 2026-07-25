@@ -171,10 +171,11 @@ export class AcpToolCallMapper implements AcpToolEventSink {
 			this.flushSnapshot(toolCallId, state, withheld, Date.now());
 		}
 
-		const resultContent = acpToolResultContent(result);
-		// A successful edit/write is best represented by its input-derived diffs;
-		// failures carry the error text instead.
-		const content = !isError && state.inputContent ? state.inputContent : resultContent;
+		const content = acpToolTerminalContent({
+			isError,
+			inputContent: state.inputContent,
+			resultContent: acpToolResultContent(result),
+		});
 		this.calls.delete(toolCallId);
 		this.sendUpdate({
 			sessionUpdate: "tool_call_update",
@@ -314,6 +315,22 @@ export function acpToolInputContent(toolName: string, args: unknown, cwd: string
 		return edits.map((edit) => ({ type: "diff", path, oldText: edit.oldText, newText: edit.newText }));
 	}
 	return undefined;
+}
+
+/**
+ * Choose the content blocks for a finished tool call.
+ *
+ * A successful edit/write is best represented by its input-derived diffs;
+ * everything else — and every failure — shows the recorded result content.
+ * Shared by the live path and `history-replay.ts` so a replayed tool call cannot
+ * drift from the one the client saw execute.
+ */
+export function acpToolTerminalContent(options: {
+	isError: boolean;
+	inputContent: ToolCallContent[] | undefined;
+	resultContent: ToolCallContent[];
+}): ToolCallContent[] {
+	return !options.isError && options.inputContent ? options.inputContent : options.resultContent;
 }
 
 /** Map a pi tool result's model-facing content onto ACP tool-call content. */

@@ -38,6 +38,7 @@ import {
 	acpToolInputContent,
 	acpToolKind,
 	acpToolResultContent,
+	acpToolTerminalContent,
 } from "./tool-call-mapper.ts";
 
 /**
@@ -69,7 +70,7 @@ export async function streamSessionHistory(options: {
  * Pure: no I/O, no notification sending — the caller decides how to deliver.
  */
 export function buildHistoryUpdates(entries: SessionEntry[], cwd: string): SessionUpdate[] {
-	const messages = convertToLlm(entries.flatMap(sessionEntryToContextMessages));
+	const messages = convertToLlm(entries.filter(isReplayableEntry).flatMap(sessionEntryToContextMessages));
 	// Tool results are emitted as part of their originating tool call, which
 	// appears earlier in the transcript, so they are indexed up front.
 	const resultsByToolCallId = new Map<string, ToolResultMessage>();
@@ -94,6 +95,19 @@ export function buildHistoryUpdates(entries: SessionEntry[], cwd: string): Sessi
 		}
 	}
 	return updates;
+}
+
+/**
+ * Whether an entry may be shown to the client.
+ *
+ * An extension `custom_message` with `display: false` is deliberately hidden in
+ * pi's own TUI. It *is* part of the model's context, but `convertToLlm` turns it
+ * into a `user` message, so replaying it would surface concealed text to the
+ * client in the user's own voice. An explicit request to stay hidden outranks
+ * this module's transcript-equals-context rule.
+ */
+function isReplayableEntry(entry: SessionEntry): boolean {
+	return !(entry.type === "custom_message" && entry.display === false);
 }
 
 /** User turns replay as `user_message_chunk`s, one per content part. */
@@ -168,7 +182,7 @@ function toolCallUpdate(toolCall: ToolCall, result: ToolResultMessage | undefine
 	const inputContent = acpToolInputContent(toolCall.name, args, cwd);
 	const isError = result?.isError === true;
 	const resultContent = result ? acpToolResultContent({ content: result.content, details: result.details }) : [];
-	const content = !isError && inputContent ? inputContent : resultContent;
+	const content = acpToolTerminalContent({ isError, inputContent, resultContent });
 	return {
 		sessionUpdate: "tool_call",
 		toolCallId: toolCall.id,

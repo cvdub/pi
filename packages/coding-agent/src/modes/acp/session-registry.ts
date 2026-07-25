@@ -35,6 +35,8 @@ export class AcpSessionRegistry {
 	private readonly deps: AcpAgentDeps;
 	private readonly clientCaps: ClientCaps;
 	private readonly sessions = new Map<string, AcpSessionHandle>();
+	/** In-flight `session/load` calls, keyed by sessionId, so duplicates join instead of racing. */
+	private readonly loadsInFlight = new Map<string, Promise<AcpSessionHandle>>();
 
 	constructor(connection: AgentSideConnection, deps: AcpAgentDeps, clientCaps: ClientCaps) {
 		this.connection = connection;
@@ -93,12 +95,38 @@ export class AcpSessionRegistry {
 	 * `createSession` produced: same shape, same rebind hook, same command set.
 	 */
 	async loadSession(options: { sessionId: string; cwd: string }): Promise<AcpSessionHandle> {
+		// The SDK dispatches requests concurrently, and the `existing` check below
+		// is followed by several awaits. Without this guard two simultaneous loads
+		// of one id would both build a runtime, both replay, and the second
+		// registration would orphan the first — leaking its runtime and
+		// subscriptions and duplicating the transcript. Joining the in-flight load
+		// makes a duplicate request a no-op instead.
+		const inFlight = this.loadsInFlight.get(options.sessionId);
+		if (inFlight) {
+			return inFlight;
+		}
+		const load = this.loadSessionUncoordinated(options).finally(() => {
+			this.loadsInFlight.delete(options.sessionId);
+		});
+		this.loadsInFlight.set(options.sessionId, load);
+		return load;
+	}
+
+	private async loadSessionUncoordinated(options: { sessionId: string; cwd: string }): Promise<AcpSessionHandle> {
 		const cwd = resolvePath(options.cwd);
 		const existing = this.sessions.get(options.sessionId);
 		if (existing) {
 			// Already open on this connection: re-streaming the live session's
 			// history is a resync, and is safer than tearing down a runtime that
-			// may have a turn in flight. The handle keeps its original cwd.
+			// may have a turn in flight. The handle keeps its original cwd — a
+			// resync ignores the request's cwd.
+			//
+			// Known-degenerate while a turn is streaming: the replay interleaves
+			// with live chunks on the same tail (they are indistinguishable to the
+			// client), the in-flight turn's completed messages appear both live and
+			// replayed, and the response waits for a stable tail. Emacs resumes in
+			// a fresh process, so this path is not on the supported route; it is a
+			// safe-ish fallback, not a designed behavior, and is untested.
 			await this.replayHistory(existing);
 			return existing;
 		}
