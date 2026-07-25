@@ -99,6 +99,10 @@
           "path": "rpc.md"
         },
         {
+          "title": "ACP Mode",
+          "path": "acp.md"
+        },
+        {
           "title": "JSON Event Stream Mode",
           "path": "json.md"
         },

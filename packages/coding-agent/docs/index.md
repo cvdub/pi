@@ -63,6 +63,7 @@ For the full first-run flow, see [Quickstart](quickstart.md).
 
 - [SDK](sdk.md) - embed pi in Node.js applications.
 - [RPC mode](rpc.md) - integrate over stdin/stdout JSONL.
+- [ACP mode](acp.md) - drive pi from an ACP editor such as Emacs agent-shell.
 - [JSON event stream mode](json.md) - print mode with structured events.
 - [TUI components](tui.md) - build custom terminal UI for extensions.
 
