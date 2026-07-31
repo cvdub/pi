@@ -167,3 +167,13 @@ Attribution:
 ## User Override
 
 If the user's instructions conflict with any rule in this document, ask for explicit confirmation before overriding. Only then execute their instructions.
+
+## Agent skills
+
+### Work tracker
+
+Wayfinding briefs, Questions and their Answers, Effort-associated Research reports, implementation-ready specs, and Tickets are checked-in Org files under `docs/work/<effort>/`; shared Research reports live under `docs/research/`. See `docs/agents/issue-tracker.org`.
+
+### Domain docs
+
+A single root `CONTEXT.org` defines the repository domain model; system-wide Org ADRs live under `docs/adr/`. See `docs/agents/domain.org`.

@@ -1,0 +1,186 @@
+#+title: Issue tracker: Local Org
+
+Effort-associated Questions, Tickets, Tasks, specs, Wayfinding briefs, Research reports, and supporting reference documents live under =docs/work/=. Research without a current Effort lives under =docs/research/=. Together they form the durable Work tracker and are committed to version control.
+
+Do not hard-wrap prose in tracked Org files. Keep each paragraph and list item on one physical line; rely on the editor's visual wrapping.
+
+* Layout
+Each Effort has a directory at =docs/work/<effort>/=.
+
+- An implementation-ready spec is =docs/work/<effort>/spec.org=.
+- A Wayfinding brief is =docs/work/<effort>/wayfinding.org=.
+- Tickets live at =docs/work/<effort>/tickets/<NN>-<slug>.org=.
+- Questions live at =docs/work/<effort>/questions/<NN>-<slug>.org=.
+- Substantial Effort-associated Research reports live in the lazily created =docs/work/<effort>/research/= collection.
+- Research without a current Effort lives in the lazily created shared =docs/research/= collection.
+- Specs, Wayfinding briefs, and Research reports are reference documents: their prose carries no lifecycle state, but each may carry tracked Tasks beneath a =Next steps= section.
+
+A Ticket collection requires its Effort's spec. A Question collection requires its Effort's Wayfinding brief. Ticket and Question sequences are independent, positive, and unique within their Effort and kind. Filenames use at least two sequence digits and a lowercase hyphenated slug. Sequence gaps remain historical and are not reused.
+
+* Wayfinding and Research
+A Wayfinding brief stores only non-derived planning context:
+
+#+begin_src org
+,#+title: <Wayfinding title>
+
+,* Destination
+<What successful Wayfinding will make possible.>
+
+,* Notes
+<Standing context and preferences.>
+
+,* Fog
+<In-scope uncertainty that cannot yet be phrased as precise Questions.>
+
+,* Out of scope
+<Work consciously excluded from the destination.>
+#+end_src
+
+Question lifecycle state stays queryable through =frontier= and =M-x org-spec-agenda=, while each Answer stays in its canonical Question file; do not copy either view into the brief. When an Answer makes Fog precise, create a Question and remove the corresponding Fog text.
+
+Keep small Question findings directly in its Answer. Put substantial evidence associated with an Effort or its Question in =docs/work/<effort>/research/<slug>.org= and link the report from the Answer without duplicating it. Research without a current Effort lives in the shared =docs/research/= collection. Research reports are reference documents whose prose carries no TODO state or Work-item properties; create either Research collection only when a report is needed.
+
+* Work items
+Ticket, Question, and Task are the Work-item kinds. Ticket and Question kind derives solely from the containing =tickets= or =questions= collection; do not persist =TYPE= metadata. A Task is any other stateful headline that carries an =ID=, living inside a tracked file: a reference document's =Next steps= section or a Ticket's =Plan= subheading. A stateful headline without an =ID= is invisible to the tracker, and =org-spec check= warns about it so it can be adopted or de-stated.
+
+Every file carrying Work items opens with a shared workflow header, shown in the templates below, that makes it self-describing: any Org session parses the keywords and logging behavior natively. Below the header, each collection file contains exactly one stateful top-level headline. All kinds share:
+
+- a stable UUID in =ID=;
+- an optional whitespace-separated list of Blocker UUIDs in =BLOCKER=;
+- the TODO, WORK, WAIT, DONE, or CANC lifecycle; and
+- dependency and frontier behavior.
+
+Only DONE satisfies a Blocker. Lifecycle mutations and structural checks reject canceled Blockers on active dependents while allowing canceled dependents to retain historical edges.
+
+** Ticket contract
+A Ticket requests independently verifiable delivery. It requires a nonempty =What to build= section and an =Acceptance criteria= section containing at least one checkbox; every checkbox must be checked before the Ticket is DONE.
+
+The generated =Plan= subheading is an optional Task published together with the Ticket. It does not block the Ticket: planning may run separately through =/plan-ticket=, or =/implement= completes the Plan in-session before entering implementation. Keep the DONE Plan holding the implementation plan actually built.
+
+#+begin_src org
+,#+TODO: TODO(t) WORK(k!) WAIT(w@) | DONE(d!) CANC(c@)
+,#+STARTUP: logdrawer
+
+,* TODO <Ticket title>
+:PROPERTIES:
+:ID:       <UUID>
+:BLOCKER:  <Blocker UUIDs; omit when empty>
+:END:
+
+,** What to build
+<Describe the independently verifiable delivery.>
+
+,** Acceptance criteria
+- [ ] <Replace with acceptance criterion.>
+
+,** TODO Plan
+:PROPERTIES:
+:ID:       <Plan UUID>
+:SKILL:    plan-ticket
+:END:
+<Design the implementation plan with /plan-ticket.>
+
+,** Notes
+<Optional durable context.>
+#+end_src
+
+Replace every angle-bracketed creation placeholder before running the final check, except the =Plan= placeholder: it stays until either =/plan-ticket= designs the plan separately or =/implement= designs it immediately before implementation. Both paths complete the Plan Task through =org-spec state=.
+
+** Question contract
+A Question requests resolution of uncertainty rather than destination delivery. It requires a =METHOD= property and a nonempty =Question= section. Valid Methods are =research=, =prototype=, and =grilling=; direct prerequisite work that produces facts belongs in a Task, not a Question.
+
+A completed Question also has one nonempty =Answer= section. The Answer may record a decision, findings, or a prototype conclusion. Link a substantial Research report from the Answer rather than duplicating it.
+
+#+begin_src org
+,#+TODO: TODO(t) WORK(k!) WAIT(w@) | DONE(d!) CANC(c@)
+,#+STARTUP: logdrawer
+
+,* TODO <Question title>
+:PROPERTIES:
+:ID:       <UUID>
+:BLOCKER:  <Blocker UUIDs; omit when empty>
+:METHOD:   <research, prototype, or grilling>
+:END:
+
+,** Question
+<State the uncertainty to resolve.>
+#+end_src
+
+Before completion, append:
+
+#+begin_src org
+,** Answer
+<Durable resolution.>
+#+end_src
+
+** Task contract
+A Task requests a workflow step that is neither destination delivery nor uncertainty resolution: collapsing planning evidence into a spec, publishing Tickets from a spec, planning one Ticket, or a manual step only the user can perform. A Task has no completion contract; marking it DONE is the judgment of whoever works it. A Task's selector is its full UUID.
+
+Create Tasks in reference documents through Org Spec:
+
+#+begin_example
+org-spec task create FILE TITLE [--skill SKILL] [--blocker WORK-ITEM]...
+#+end_example
+
+FILE is the reference document, absolute or Docs-relative. The Task is appended beneath the file's =Next steps= section, which is created together with the workflow header when absent. The optional =SKILL= property names the skill an agent runs to work the Task; the dashboard's =[Run]= button prefills that skill with the Task's UUID. A Ticket's generated Plan is instead folded into its Ticket row and receives a dedicated =[Plan]= button using the containing Ticket selector.
+
+#+begin_src org
+,* Next steps
+,** TODO <Task title>
+:PROPERTIES:
+:ID:       <UUID>
+:SKILL:    <skill an agent runs to work the Task; optional>
+:BLOCKER:  <Blocker UUIDs; omit when empty>
+:END:
+#+end_src
+
+Chain the workflow through Tasks so the frontier names the available actions: charting leaves a "write the spec" Task in the Wayfinding brief, the spec leaves a "create Tickets" Task in its Next steps, and each published Ticket carries an optional Plan Task alongside the actionable Ticket. Off-script steps — a credential to provision, a decision only the user can make — become Tasks blocking the step they gate.
+
+Every skill launched by a Task claims that Task at the start. After loading these conventions and doing only the minimum lookup needed to resolve the invocation, it must run =org-spec state <task-uuid> WORK= before gathering substantive context, researching, drafting, requesting approval, or editing artifacts. A skill may resume an already =WORK= Task only when the invocation explicitly identifies it. It must reject blocked, =WAIT=, =DONE=, and =CANC= Tasks rather than begin their work unclaimed. For a Ticket Plan, both =/plan-ticket= and =/implement= receive the containing Ticket selector, minimally read the Ticket to obtain the Plan drawer's =ID=, and claim or explicitly resume that Task while leaving the Ticket state untouched until the Plan is recorded.
+
+* Lifecycle
+The lifecycle is enforced inside Org itself, so interactive =org-todo=, the Agenda, and =org-spec state= all pass through the same checks. Use =org-spec state= from scripts and agents so the durable note that WAIT and CANC require is recorded.
+
+- TODO may move to WORK, WAIT, or CANC.
+- WORK may move to TODO, WAIT, DONE, or CANC.
+- WAIT may move to TODO, WORK, or CANC.
+- DONE and CANC are terminal under ordinary state changes.
+- Entering WORK requires every Blocker to be DONE.
+- Entering DONE requires the current state to be WORK, every Blocker to be DONE, and the kind-specific completion contract to hold.
+- WAIT and CANC require a durable explanatory note.
+- Cancellation does not require the canceled Work item's own Blockers to be complete, but active dependents or their edges must be revised first.
+
+A Ticket is complete only when every acceptance checkbox is checked. Its Plan Task is not a lifecycle Blocker, but the implementation skills complete it before entering WORK so delivery starts and ends against a recorded Plan. A Question is complete only when its Answer is nonempty. A Task completes without a contract.
+
+* Selectors and commands
+A Work item selector is one of:
+
+- its full UUID — the only selector form for a Task;
+- its file path, absolute or relative to the Docs directory, naming the file's own Ticket or Question; or
+- =<effort>/ticket/<NN>= or =<effort>/question/<NN>=.
+
+Bare numbers, fuzzy titles, and ambiguous selectors are invalid.
+
+#+begin_example
+org-spec frontier [EFFORT]
+org-spec check [EFFORT]
+org-spec ticket create EFFORT TITLE [--blocker WORK-ITEM]...
+org-spec question create EFFORT TITLE METHOD [--blocker WORK-ITEM]...
+org-spec task create FILE TITLE [--skill SKILL] [--blocker WORK-ITEM]...
+org-spec state WORK-ITEM TODO|WORK|WAIT|DONE|CANC [NOTE]
+org-spec block WORK-ITEM BLOCKER
+org-spec unblock WORK-ITEM BLOCKER
+#+end_example
+
+Creation reports the new selector, UUID, and Docs-relative path. Replace generated placeholders with substantive prose before the final check.
+
+=frontier= and =check= discover the nearest configured Docs directory, inspect the complete Work tracker by default, and optionally focus their displayed result on one Effort. Focused operations still resolve UUIDs and cross-Effort Blockers tracker-wide. Use =org-spec help= or =org-spec <command> --help= for command guidance.
+
+Run =M-x org-spec-agenda= for the interactive dashboard. It orders Efforts that have unblocked Work by slug, followed by fully blocked Efforts in slug order, and adds a spec or Wayfinding title only when that title says more than a humanized slug. Without redundant kind subheaders, each Effort renders its open Questions followed by completed Questions when any Question remains open, then its open standalone Tasks, then its open Tickets followed by completed Tickets when any Ticket remains open. A Ticket's generated Plan Task is folded into the Ticket row rather than rendered separately. Completed history for an otherwise closed kind stays hidden. Question rows include state, QNN selector sequence, and Method; Ticket rows include state and TNN selector sequence. When no relevant Work exists, the dashboard says so explicitly. On a Work-item row, =RET= visits the canonical Org file, =g= refreshes the dashboard, and =t= performs a lifecycle-safe Org Spec transition. The dashboard disables =C-S-left= and =C-S-right= so direct Agenda TODO cycling cannot bypass Org Spec lifecycle enforcement.
+
+Every startable row leads with agent buttons that open a fresh Agent Shell rooted at the project. An unplanned Ticket offers =[Plan]= and =[Implement]= on its single row, prefilling =/skill:plan-ticket EFFORT/ticket/NN= and =/skill:implement EFFORT/ticket/NN= respectively; after its Plan Task is DONE, only =[Implement]= remains. Questions and standalone Tasks retain =[Run]=, prefilling =/skill:grill-with-docs EFFORT/question/NN= or the Task's own =SKILL=. A blocked row shows a de-emphasized =blocked= in that same action column when it has no independently startable planning action. Prompts remain unsubmitted so shell options can be changed before starting the Work. Click a button or press =M-RET= to launch the first available action on the row. Only unstarted, unblocked actions carry buttons: started, waiting, blocked, and terminal actions carry none, so the dashboard never offers a launch that its own lifecycle rules would reject.
+
+* Validation
+=org-spec check= rejects missing workflow headers, malformed identities and Blockers, duplicate IDs or per-kind sequences, cycles, invalid filenames, missing Effort contracts, obsolete type metadata, malformed Ticket or Question sections, unchanged scaffolding placeholders, invalid Question Methods, violated DONE invariants, and active references to canceled Blockers. It additionally warns, without failing, about stateful headlines that carry no =ID=: the tracker cannot see them, so adopt them as Tasks or remove their state.
+
+Keep Tickets accurate as delivery documentation: check acceptance criteria only after verification, keep the Plan current with what is actually built, and preserve useful implementation context in Notes. Keep Questions and Answers accurate as planning history; query Work-item state and Answers from Org instead of maintaining a separate answer index.
