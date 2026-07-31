@@ -10,10 +10,9 @@
  * model are derived from one source. Entries that never reach the model — labels,
  * model/thinking changes, plain custom entries, `!!`-excluded bash output — drop
  * out on their own; compaction and branch summaries survive as the prefixed user
- * messages the model actually receives. The consequence worth knowing: extension
- * `custom_message` entries marked `display: false` are hidden in pi's TUI but are
- * part of the context, so they *are* replayed. Showing the client less than the
- * model was given is the mismatch this milestone exists to close.
+ * messages the model actually receives. Two deliberate display rules apply after
+ * that projection: hidden custom messages remain hidden, and tool-result text is
+ * bounded for ACP display while the complete result stays in `rawOutput`.
  *
  * Completed tool calls are rebuilt through the exported helpers of
  * `tool-call-mapper.ts` (`acpToolKind`, `acpToolCallTitle`,

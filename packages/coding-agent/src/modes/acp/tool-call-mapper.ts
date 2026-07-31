@@ -28,6 +28,7 @@ import { isAbsolute, relative } from "node:path";
 import type { SessionUpdate, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { resolveToCwd } from "../../core/tools/path-utils.ts";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead } from "../../core/tools/truncate.ts";
 import type { AcpAssistantToolEvent, AcpToolEventSink, AcpToolExecutionEvent } from "./event-translator.ts";
 
 /** Minimum gap between snapshot updates for a single toolCallId. */
@@ -333,17 +334,50 @@ export function acpToolTerminalContent(options: {
 	return !options.isError && options.inputContent ? options.inputContent : options.resultContent;
 }
 
-/** Map a pi tool result's model-facing content onto ACP tool-call content. */
+/**
+ * Map a pi tool result's model-facing content onto bounded ACP display content.
+ *
+ * ACP defines tool-call `content` as displayable information and `rawOutput` as
+ * the complete raw result. Keep the model-facing result untouched, but cap the
+ * text copied into client fragments to the same limits pi tools use for model
+ * output. The caller still places the complete result in `rawOutput`.
+ */
 export function acpToolResultContent(result: PiToolResult): ToolCallContent[] {
 	const blocks: ToolCallContent[] = [];
+	let remainingBytes = DEFAULT_MAX_BYTES;
+	let remainingLines = DEFAULT_MAX_LINES;
+	let textTruncated = false;
 	for (const item of result?.content ?? []) {
 		if (item.type === "text") {
-			if (item.text) {
-				blocks.push({ type: "content", content: { type: "text", text: item.text } });
+			if (!item.text) {
+				continue;
 			}
+			if (textTruncated || remainingBytes <= 0 || remainingLines <= 0) {
+				textTruncated = true;
+				continue;
+			}
+			const display = truncateHead(item.text, {
+				maxBytes: remainingBytes,
+				maxLines: remainingLines,
+			});
+			if (display.content) {
+				blocks.push({ type: "content", content: { type: "text", text: display.content } });
+			}
+			remainingBytes -= display.outputBytes;
+			remainingLines -= display.outputLines;
+			textTruncated = display.truncated;
 		} else if (item.type === "image") {
 			blocks.push({ type: "content", content: { type: "image", data: item.data, mimeType: item.mimeType } });
 		}
+	}
+	if (textTruncated) {
+		blocks.push({
+			type: "content",
+			content: {
+				type: "text",
+				text: `\n\n[ACP display truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}. Complete result is preserved in rawOutput.]`,
+			},
+		});
 	}
 	return blocks;
 }

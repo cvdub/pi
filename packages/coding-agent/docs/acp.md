@@ -47,7 +47,7 @@ Run this checklist against a real agent-shell session (against the built `dist/c
 - Model and thinking-level discovery and switching through ACP session configuration (`session/new`, `session/load`, and `session/set_config_option`)
 - Model-specific thinking choices refreshed after model changes (`category: thought_level`)
 - Streaming assistant text and thinking (`agent_message_chunk` / `agent_thought_chunk`)
-- Tool-call translation (`tool_call` / `tool_call_update`) with kind/title/locations and diff content for edits and writes
+- Tool-call translation (`tool_call` / `tool_call_update`) with kind/title/locations and diff content for edits and writes. Displayable tool-result text is bounded to 2,000 lines or 50 KiB; the complete result remains in Pi's model context and ACP `rawOutput`.
 - fs delegation (`fs/read_text_file` / `fs/write_text_file`), gated on `clientCapabilities.fs`
 - Terminal delegation (`terminal/*`), gated on `clientCapabilities.terminal`
 - Extension UI bridge: `ctx.ui.confirm` / `ctx.ui.select` round-trip through `session/request_permission`

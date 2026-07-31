@@ -6,6 +6,7 @@
 
 - Fixed Z.AI Coding Plan defaults referencing the removed GLM-5.1 model ([#8096](https://github.com/earendil-works/pi/issues/8096)).
 - Fixed ACP clients receiving no model, thinking-level, or session-mode controls when creating or loading sessions.
+- Fixed large ACP text tool results overwhelming client display fragments by bounding display content while preserving complete model context and raw output.
 
 ## [0.84.2] - 2026-08-14
 
