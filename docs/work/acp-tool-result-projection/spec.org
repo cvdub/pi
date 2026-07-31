@@ -1,0 +1,59 @@
+#+title: Expose tool-defined ACP projection
+
+* Problem statement
+A Pi tool result currently has one model-facing content channel, and Pi copies that channel into ACP tool-call content and raw output while also copying extension tool arguments into ACP raw input. Extension tools cannot give ACP clients a bounded or purpose-specific representation without weakening the complete result consumed by the model.
+
+Persisting a separate display payload would duplicate data in the session schema and could drift between live execution and history replay. Hard-coding individual extension names in the ACP mapper would couple the coding-agent package to consumers it does not own. Pi instead needs a tool-definition seam that projects persisted tool results into ACP independently of the provider-agnostic model result.
+
+* Solution
+Let each coding-agent tool definition optionally declare how its result is represented in ACP, which standard ACP kind describes it, and whether complete raw input and output should cross the protocol. Live mapping and history replay resolve the current tool definition and apply the same declarations. Tools without ACP declarations retain their existing behavior.
+
+The result projection derives Pi text and image blocks synchronously from the same typed result and error status already persisted for the model. Projection failures are contained to a short client diagnostic rather than failing tool execution, session loading, or open to the original potentially large result.
+
+* User stories
+1. As an extension author, I want to derive ACP result content from the same result already persisted for the model, so that no additional session payload is required.
+2. As an extension author, I want ACP result content expressed with Pi text and image blocks, so that my extension does not construct protocol-specific content wrappers.
+3. As an extension author, I want an empty derived result to suppress ACP result content intentionally, so that tools may rely on title or status alone.
+4. As an extension author, I want an ACP presentation failure contained to a short client diagnostic, so that a faulty hook cannot kill the tool call, session load, or client with a large fallback.
+5. As an ACP client user, I want standard ACP kind values emitted from tool declarations, so that clients can apply protocol-defined presentation behavior without tool-name special cases.
+6. As an ACP client user, I want tools to omit optional raw input or output when those complete values are unnecessary or unsuitable for the wire representation.
+7. As a session-resume user, I want a tool call replayed through the same current presentation policy as a live call, so that resume does not unexpectedly reveal content omitted by the installed tool definition.
+8. As a session-resume user, I want a removed extension to fall back to Pi's ordinary bounded replay rather than make the session unloadable, so that presentation metadata is not a hard persistence dependency.
+9. As a maintainer, I want tools without ACP declarations to preserve existing content, kind, raw-input, and raw-output behavior, so that this API is backward compatible.
+10. As a maintainer, I want ACP-specific policy to live on coding-agent tool definitions rather than provider-agnostic agent results, so that protocol presentation remains in the coding-agent package.
+
+* Implementation decisions
+- Extend the coding-agent =ToolDefinition= interface with three optional ACP declarations: a synchronous =acpResultContent= function, a static =acpKind= value typed with the official SDK =ToolKind=, and literal-false =acpRawInput= and =acpRawOutput= opt-outs. Absence of each declaration preserves current behavior.
+- =acpResultContent= receives the typed =AgentToolResult= plus an options value containing =isError= and returns Pi text or image content blocks. It does not receive tool arguments, execution context, theme state, protocol connection state, or asynchronous authority, and it does not return ACP SDK content wrappers.
+- The function must be deterministic from its arguments. Live terminal mapping and history replay supply persisted error status, result content, and result details; snapshots supply =isError= as false. An implementation may close over code, so replay equivalence is relative to the currently installed extension version rather than guaranteed across upgrades.
+- ACP mapping resolves the current tool definition through the session's existing tool-definition lookup. The live mapper and history builder gain that resolver through dependency injection, following the existing non-TUI renderer lookup pattern rather than importing extension registries into pure mapping helpers.
+- The mapper applies =acpResultContent= to cumulative streaming snapshots and terminal results.
+- Hook-produced blocks pass through the existing ACP result-content conversion and its 2,000-line or 50-KiB text backstop. Returning an empty array is valid intentional suppression. Existing successful input-derived diff precedence remains unchanged for tool calls represented as ACP diffs.
+- If =acpResultContent= throws, Pi records the projection failure outside the protocol stream and emits a short diagnostic as ACP content. It does not fail tool execution or session loading, mutate the model-facing result, or fall back to the potentially large original result.
+- If no current definition or result-content declaration can be resolved, Pi uses the existing bounded projection of persisted model-facing content. This compatibility fallback may present more than the original live extension did, but it keeps sessions loadable after an extension is removed.
+- =acpKind= overrides Pi's current name-based ACP kind inference in both live announcements and replay. When absent, built-in name mappings and the =other= default remain authoritative. The declaration is static; argument-dependent kind selection is not introduced.
+- =acpRawInput: false= omits =rawInput= from live ACP tool-call announcements and replayed tool calls while retaining arguments internally for execution, title construction, location mapping, input-derived content, and Pi session history.
+- =acpRawOutput: false= omits =rawOutput= from live terminal updates and replayed tool calls while retaining the complete result for model context and Pi session history.
+- Opting out of raw fields omits them rather than sending truncated or sanitized objects under ACP's raw-field names. ACP makes both fields optional, so omission requires no capability negotiation or protocol metadata.
+- No persisted message or session schema changes. Model-facing =content= and structured =details= remain the source from which the currently installed tool definition re-derives ACP content during replay.
+- ACP documentation describes tool-defined result projection and optional raw fields instead of promising that every complete result is always preserved in =rawOutput=. Extension API documentation states determinism, error behavior, replay behavior, defaults, and the distinction between model-facing results and ACP projection.
+
+* Testing decisions
+- The highest presentation seam is the ACP tool-call mapper supplied with a real or stub tool-definition resolver. Mapper tests observe emitted ACP session updates rather than testing private formatting helpers alone.
+- Mapper coverage includes a tool without declarations, custom snapshot and terminal content, intentional empty content, terminal errors, a throwing result-content function, a missing definition, a static kind override, default kind inference, raw-input omission, raw-output omission, and unchanged raw-field defaults.
+- Mapper tests prove that a hook exception emits a short diagnostic and never falls back to the original large result, while tool execution status remains completed or failed according to the original event.
+- The history builder receives the same tool-definition resolver contract. Replay tests prove that content, kind, and raw-field omissions match live terminal projection for persisted success and error results, and that a missing definition uses the compatibility fallback.
+- Final validation includes the focused coding-agent ACP tests, any changed documentation checks, =npm run check=, =org-spec check=, and =git diff --check=.
+
+* Out of scope
+- Changing the provider-agnostic agent result type or model-facing tool content.
+- Persisting rendered ACP content or changing the session schema.
+- A global compact-content or raw-field size policy for all tools.
+- Sanitized or transformed ACP raw fields; an opted-out raw field is absent.
+- Argument-dependent ACP kinds.
+- Capability negotiation, custom ACP metadata, experimental protocol fields, or changes to the ACP specification.
+- Guaranteeing byte-identical replay presentation across extension upgrades.
+- Implementing presentation policy for a particular extension; consumers adopt the generic contract in their owning repositories.
+
+* Further notes
+ACP =content=, =rawInput=, =rawOutput=, and =ToolKind= are standard protocol fields. The new declarations are Pi's internal policy for projecting a complete tool invocation onto those optional wire fields; they do not alter ACP or the provider-agnostic result delivered to the model.
