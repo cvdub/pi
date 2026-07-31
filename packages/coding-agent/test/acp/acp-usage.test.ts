@@ -12,7 +12,7 @@
  */
 
 import type { AnyMessage, SessionNotification, UsageUpdate } from "@agentclientprotocol/sdk";
-import { fauxAssistantMessage } from "@earendil-works/pi-ai/compat";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/compat";
 import { afterEach, describe, expect, it } from "vitest";
 import { type AcpHarness, createAcpHarness } from "./acp-harness.ts";
 
@@ -93,6 +93,23 @@ describe("ACP usage reporting", () => {
 		expect(updates[0].used).toBeLessThan(FAUX_CONTEXT_WINDOW);
 		expect(updates[0].cost).toMatchObject({ currency: "USD" });
 		expect(typeof updates[0].cost?.amount).toBe("number");
+	});
+
+	it("emits context updates after each model response in a tool loop", async () => {
+		harness = await createAcpHarness({
+			responses: [
+				fauxAssistantMessage([fauxToolCall("bash", { command: "printf intermediate" }, { id: "call-bash" })]),
+				fauxAssistantMessage("finished"),
+			],
+		});
+		const sessionId = await harness.openSession();
+
+		await harness.prompt(sessionId, "run a command");
+
+		const updates = usageUpdates(harness);
+		expect(updates).toHaveLength(2);
+		expect(updates.every((update) => update.used > 0 && update.size === FAUX_CONTEXT_WINDOW)).toBe(true);
+		expect(updates[1].used).not.toBe(updates[0].used);
 	});
 
 	it("puts the usage_update on the wire before the session/prompt response", async () => {

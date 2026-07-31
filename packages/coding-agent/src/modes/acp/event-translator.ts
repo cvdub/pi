@@ -137,7 +137,7 @@ export interface AcpEventTranslatorOptions {
 	tracker: PromptTurnTracker;
 	/** Reports whether the current AgentSession is idle (no active run). */
 	isSessionIdle: () => boolean;
-	/** Snapshots context/cost for the `usage_update` sent at each settle. */
+	/** Snapshots context/cost for `usage_update` notifications. */
 	usageUpdate?: () => UsageUpdate;
 	/** M2 seam: receives all tool-related events. */
 	toolEventSink?: AcpToolEventSink;
@@ -201,6 +201,13 @@ export class AcpEventTranslator {
 			case "tool_execution_update":
 			case "tool_execution_end":
 				this.toolEventSink?.onToolExecutionEvent?.(event);
+				break;
+			case "message_end":
+				if (event.message.role === "assistant") {
+					// AgentSession notifies subscribers before persisting the finalized
+					// message. Defer the snapshot so usage and cost include this response.
+					queueMicrotask(() => this.sendUsageUpdate());
+				}
 				break;
 			case "agent_settled":
 				this.settle();
