@@ -1983,6 +1983,36 @@ pi.registerTool({
 });
 ```
 
+#### ACP presentation
+
+A tool can define an ACP-specific presentation without changing the complete result sent to the model or adding display data to the session:
+
+```typescript
+pi.registerTool({
+  // name, label, description, parameters, execute, ...
+  acpKind: "search",
+  acpRawInput: false,
+  acpRawOutput: false,
+  acpResultContent(result, { isError }) {
+    return [{
+      type: "text",
+      text: isError ? "Search failed" : `${result.details.matches.length} matches`,
+    }];
+  },
+});
+```
+
+All declarations are optional, and omission preserves Pi's normal ACP behavior:
+
+- `acpResultContent(result, { isError })` synchronously returns Pi text/image blocks. `result` is a detached `AgentToolResult<TDetails>` containing the persisted `content` and `details`, so accidental mutation cannot change model context or session data; other optional result metadata is omitted to keep live and replay inputs identical. The hook does not receive tool arguments, execution/UI context, or protocol objects. It runs for cumulative streaming snapshots and terminal results. Returning `[]` intentionally suppresses terminal result content.
+- `acpKind` statically overrides name-based inference with an official ACP SDK `ToolKind` such as `read`, `edit`, `search`, `execute`, `think`, `fetch`, or `other`.
+- `acpRawInput: false` omits ACP's optional `rawInput`; arguments remain available to execution, titles, locations, diffs, and Pi session history.
+- `acpRawOutput: false` omits ACP's optional `rawOutput`; the complete result remains available to the model and in Pi session history.
+
+Keep `acpResultContent` deterministic from `result` and `isError`. Pi re-runs it from persisted results when an ACP client loads history, using the currently installed extension version; no rendered ACP payload is persisted. If a definition is unavailable during replay, Pi falls back to bounded model-result content and the normal kind/raw defaults so removed extensions do not make sessions unloadable.
+
+Projected text passes through Pi's ACP display limit of 2,000 lines or 50 KiB, and projected images are converted to ACP content blocks. Successful input-derived edit/write diffs retain precedence over result content. If the hook throws, Pi logs the underlying error outside the ACP stream, omits `rawOutput`, and sends only a fixed short diagnostic; the tool's execution status and model-facing result are unchanged, and Pi does not expose the original result as fallback content.
+
 **Usage accounting:** If a tool makes nested LLM calls, return their combined `Usage` as `usage`. Pi persists it on the tool result and includes it in footer, `/session`, and RPC session totals. `tool_result` handlers can inspect or replace this value.
 
 **Signaling errors:** To mark a tool execution as failed (sets `isError: true` on the result and reports it to the LLM), throw an error from `execute`. Returning a value never sets the error flag regardless of what properties you include in the return object.

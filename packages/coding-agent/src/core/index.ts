@@ -31,6 +31,7 @@ export { createEventBus, type EventBus, type EventBusController } from "./event-
 export { areExperimentalFeaturesEnabled } from "./experimental.ts";
 // Extensions system
 export {
+	type AcpResultContentOptions,
 	type AgentEndEvent,
 	type AgentSettledEvent,
 	type AgentStartEvent,

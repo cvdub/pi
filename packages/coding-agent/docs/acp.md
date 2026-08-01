@@ -47,13 +47,23 @@ Run this checklist against a real agent-shell session (against the built `dist/c
 - Model and thinking-level discovery and switching through ACP session configuration (`session/new`, `session/load`, and `session/set_config_option`)
 - Model-specific thinking choices refreshed after model changes (`category: thought_level`)
 - Streaming assistant text and thinking (`agent_message_chunk` / `agent_thought_chunk`)
-- Tool-call translation (`tool_call` / `tool_call_update`) with kind/title/locations and diff content for edits and writes. Displayable tool-result text is bounded to 2,000 lines or 50 KiB; the complete result remains in Pi's model context and ACP `rawOutput`.
+- Tool-call translation (`tool_call` / `tool_call_update`) with kind/title/locations and diff content for edits and writes. Displayable tool-result text is bounded to 2,000 lines or 50 KiB; the complete result always remains in Pi's model context, while each tool can choose whether ACP also receives it as optional `rawOutput`.
 - fs delegation (`fs/read_text_file` / `fs/write_text_file`), gated on `clientCapabilities.fs`
 - Terminal delegation (`terminal/*`), gated on `clientCapabilities.terminal`
 - Extension UI bridge: `ctx.ui.confirm` / `ctx.ui.select` round-trip through `session/request_permission`
 - `session/load` with full transcript replay, and `available_commands_update` for extension commands, prompt templates, and skills
 - Usage reporting: cumulative token counts on the `session/prompt` response, plus `usage_update` notifications carrying context fill and session cost
 - Multiple concurrent sessions per connection, each an independent pi session
+
+### Tool result projection
+
+Pi keeps a tool's provider-agnostic, model-facing result separate from its ACP presentation. By default, ACP receives the current behavior: bounded text/image result content, a kind inferred from the built-in tool name (or `other`), complete arguments in optional `rawInput`, and the complete result in optional `rawOutput`. Successful built-in-style edit/write calls continue to show their input-derived diff instead of result text.
+
+A coding-agent `ToolDefinition` may override these channels with `acpResultContent`, `acpKind`, `acpRawInput: false`, and `acpRawOutput: false`; see [Tool Definition](extensions.md#tool-definition). A custom result projection runs for cumulative live snapshots and terminal results, returns Pi text/image blocks rather than ACP wrappers, and passes through the same 2,000-line/50-KiB display backstop. An empty terminal projection intentionally omits result content. The static `acpKind` uses the official SDK's standard `ToolKind` values. A literal-false raw policy omits the field entirely; it does not send a truncated or sanitized value under the raw field name.
+
+Projection is derived from the result and `isError` already persisted for the model. No ACP display payload is added to the session schema. During `session/load`, Pi resolves the currently installed tool definition and re-runs the same projection, kind, and raw-field policy; replay equivalence is therefore relative to the installed extension version. If the extension was removed or the tool has no ACP declaration, replay falls back to the ordinary bounded content, inferred kind, and raw fields so the session remains loadable.
+
+Projection failures fail closed. Pi logs the underlying error to stderr, omits `rawOutput`, and sends only a fixed short ACP diagnostic, without failing the tool execution, changing its completed/failed status, mutating the model-facing result, or falling back to the potentially large original content.
 
 ### Usage reporting
 

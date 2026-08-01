@@ -1,9 +1,13 @@
 #+TODO: TODO(t) WORK(k!) WAIT(w@) | DONE(d!) CANC(c@)
 #+STARTUP: logdrawer
 
-* TODO Expose tool-defined ACP projection in Pi
+* DONE Expose tool-defined ACP projection in Pi
 :PROPERTIES:
 :ID:       c6f41992-87fe-4cba-ab00-dcf170168451
+:END:
+:LOGBOOK:
+- State "DONE"       from "WORK"       [2026-07-31 Fri 17:38]
+- State "WORK"       from "TODO"       [2026-07-31 Fri 23:52]
 :END:
 
 ** What to build
@@ -12,22 +16,42 @@ Add a backward-compatible ACP projection contract to Pi's coding-agent tool defi
 Document the extension-facing contract and ACP behavior in this repository. Complete the capability and its focused tests without implementing a policy for any particular extension; downstream repositories can adopt a tested Pi revision and the generic contract independently.
 
 ** Acceptance criteria
-- [ ] =ToolDefinition= exposes the synchronous =acpResultContent= contract with typed result and =isError= inputs, Pi text/image output blocks, deterministic replay guidance, and intentional empty-output semantics.
-- [ ] =ToolDefinition= exposes a static official-SDK =acpKind= override plus literal-false =acpRawInput= and =acpRawOutput= opt-outs, with absence preserving existing behavior.
-- [ ] Live ACP announcements, snapshots, and terminal updates resolve the active tool definition and honor custom content, kind, and raw-field policy without changing the model-facing result.
-- [ ] Hook-produced content retains Pi's existing ACP line/byte backstop and successful input-derived diff precedence; a hook exception emits a short diagnostic without failing the tool execution or exposing the original result.
-- [ ] Session history replay resolves the current tool definition through the same contract and reproduces content, kind, raw-field omission, and error behavior without adding persisted display data.
-- [ ] A missing definition or declaration uses the existing bounded content, inferred kind, and raw-field defaults so removed extensions do not make sessions unloadable.
-- [ ] Focused Pi tests cover declared and undeclared tools, snapshots, successes, errors, empty content, hook failure, kind override, both raw-field opt-outs, history replay, and missing-definition fallback.
-- [ ] Pi's ACP and extension documentation describes the projection channels, defaults, determinism boundary, fail-closed behavior, replay behavior, and optional raw fields.
-- [ ] The Pi fork builds successfully and its focused ACP suites pass.
+- [X] =ToolDefinition= exposes the synchronous =acpResultContent= contract with typed result and =isError= inputs, Pi text/image output blocks, deterministic replay guidance, and intentional empty-output semantics.
+- [X] =ToolDefinition= exposes a static official-SDK =acpKind= override plus literal-false =acpRawInput= and =acpRawOutput= opt-outs, with absence preserving existing behavior.
+- [X] Live ACP announcements, snapshots, and terminal updates resolve the active tool definition and honor custom content, kind, and raw-field policy without changing the model-facing result.
+- [X] Hook-produced content retains Pi's existing ACP line/byte backstop and successful input-derived diff precedence; a hook exception emits a short diagnostic without failing the tool execution or exposing the original result.
+- [X] Session history replay resolves the current tool definition through the same contract and reproduces content, kind, raw-field omission, and error behavior without adding persisted display data.
+- [X] A missing definition or declaration uses the existing bounded content, inferred kind, and raw-field defaults so removed extensions do not make sessions unloadable.
+- [X] Focused Pi tests cover declared and undeclared tools, snapshots, successes, errors, empty content, hook failure, kind override, both raw-field opt-outs, history replay, and missing-definition fallback.
+- [X] Pi's ACP and extension documentation describes the projection channels, defaults, determinism boundary, fail-closed behavior, replay behavior, and optional raw fields.
+- [X] The Pi fork builds successfully and its focused ACP suites pass.
 
-** TODO Plan
+** DONE Plan
 :PROPERTIES:
 :ID:       0ffbe7b1-cb1c-4021-9b3b-5e5507620e55
 :SKILL:    plan-ticket
 :END:
-<Design the implementation plan with /plan-ticket.>
+:LOGBOOK:
+- State "DONE"       from "WORK"       [2026-07-31 Fri 23:52]
+- State "WORK"       from "TODO"       [2026-07-31 Fri 23:50]
+:END:
+*** Goal
+Expose a generic, backward-compatible ACP presentation seam on coding-agent tool definitions, and apply the current definition consistently to live tool events and persisted-history replay without changing model-facing results or session schemas.
+
+*** Dependencies and data structures
+Use the existing pinned =@agentclientprotocol/sdk= =ToolKind= type and the existing Pi =AgentToolResult= plus text/image content block types; no new dependency is needed. Extend =ToolDefinition<TParams, TDetails, TState>= with =acpResultContent(result: AgentToolResult<TDetails>, options: { isError: boolean }): (TextContent | ImageContent)[]=, static =acpKind?: ToolKind=, and literal-false =acpRawInput?: false= / =acpRawOutput?: false=. The hook is synchronous and its documented interface requires deterministic derivation from the supplied persisted result and error status; an empty array intentionally suppresses terminal ACP content.
+
+*** Module seams and data flow
+Keep =AcpToolCallMapper= as the live presentation module and inject a current-definition resolver through =AcpToolCallMapperOptions=, supplied by =AcpSessionRegistry= from =runtime.session.getToolDefinition=. Resolve declarations when announcing, projecting cumulative snapshots, and projecting terminal results. Centralize result projection in =tool-call-mapper.ts=: invoke a declaration when available, convert its Pi blocks through the existing bounded ACP conversion, and on exception log the underlying failure outside the protocol stream while returning only a fixed short diagnostic. Preserve input-derived successful edit/write diff precedence; undeclared or unresolved tools use the existing bounded model-result projection.
+
+Store only live per-call presentation state needed for consistent terminal updates. Announcements use the declaration's =acpKind= before name inference and omit =rawInput= only for literal false. Terminal updates omit =rawOutput= for literal false and fail-closed projection diagnostics while retaining complete execution/session data internally. Projection never mutates the =AgentToolResult=.
+
+Inject the same resolver into =streamSessionHistory= / =buildHistoryUpdates=. Replay resolves each tool name against the currently installed definition and applies the same content, kind, raw-field, error, and fallback helpers while deriving everything from existing assistant/tool-result messages. Missing definitions remain replayable through the current bounded defaults.
+
+*** Verification and documentation
+Use the pre-agreed public seams from the Effort spec: emitted updates from =AcpToolCallMapper= for live/snapshot behavior and =buildHistoryUpdates= (plus the ACP load harness where wiring matters) for replay. Add red-green slices for undeclared defaults, custom snapshot/success/error/empty/failure projection, bounded custom output, kind override, raw opt-outs, missing-definition fallback, and live/replay equivalence. Document the extension-facing contract in =docs/extensions.md= and the wire projection/default/failure/replay behavior in =docs/acp.md=. Finish with focused ACP tests, =npm run check=, =git diff --check=, and Org Spec validation.
 
 ** Notes
 The delivery contract is the Effort spec. A downstream dotfiles Effort owns the first deployed consumer: compact ACP presentation for its subagent extension, the Pi package revision handoff, Guix Home integration, and Agent Shell acceptance.
+
+ACP projection receives a detached input normalized to persisted =content= and =details=. This both prevents extension mutation from changing model/session data and keeps live and replay hook inputs equivalent when live-only =AgentToolResult= metadata is present.

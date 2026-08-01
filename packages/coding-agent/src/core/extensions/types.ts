@@ -8,6 +8,7 @@
  * - Interact with the user via UI primitives
  */
 
+import type { ToolKind } from "@agentclientprotocol/sdk";
 import type {
 	AgentMessage,
 	AgentToolResult,
@@ -443,6 +444,12 @@ export interface ToolRenderContext<TState = any, TArgs = any> {
 	isError: boolean;
 }
 
+/** Options supplied when projecting a tool result for ACP clients. */
+export interface AcpResultContentOptions {
+	/** Whether the persisted tool result represents an execution error. */
+	isError: boolean;
+}
+
 /**
  * Tool definition for registerTool().
  */
@@ -463,6 +470,28 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	constrainedSampling?: false | ConstrainedSamplingConfig;
 	/** Controls whether ToolExecutionComponent renders the standard colored shell or the tool renders its own framing. */
 	renderShell?: "default" | "self";
+
+	/**
+	 * Derive ACP display content synchronously from the persisted model-facing result.
+	 *
+	 * `result` is a detached copy containing persisted `content` and `details`, so
+	 * projection code cannot mutate the model-facing result. Other optional
+	 * AgentToolResult metadata is not supplied. The projection must be deterministic
+	 * from `result` and `options` so live updates and session replay agree. Returning
+	 * an empty array intentionally
+	 * suppresses terminal ACP result content. A thrown error is contained by ACP
+	 * mode and shown only as a short diagnostic; it does not fail the tool call.
+	 */
+	acpResultContent?(
+		result: AgentToolResult<TDetails>,
+		options: AcpResultContentOptions,
+	): (TextContent | ImageContent)[];
+	/** Override ACP's standard presentation kind. Name-based inference is used when absent. */
+	acpKind?: ToolKind;
+	/** Set to false to omit the complete tool arguments from ACP `rawInput`. */
+	acpRawInput?: false;
+	/** Set to false to omit the complete model-facing result from ACP `rawOutput`. */
+	acpRawOutput?: false;
 
 	/** Optional compatibility shim to prepare raw tool call arguments before schema validation. Must return an object conforming to TParams. */
 	prepareArguments?: (args: unknown) => Static<TParams>;
@@ -496,6 +525,11 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 		context: ToolRenderContext<TState, Static<TParams>>,
 	) => Component;
 }
+
+export type AcpToolDefinition = Pick<
+	ToolDefinition,
+	"name" | "acpResultContent" | "acpKind" | "acpRawInput" | "acpRawOutput"
+>;
 
 type AnyToolDefinition = ToolDefinition<any, any, any>;
 

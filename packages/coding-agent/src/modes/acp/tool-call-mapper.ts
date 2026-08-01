@@ -18,7 +18,7 @@
  *   *replaces*, so snapshots are forwarded verbatim — never diff-appended —
  *   throttled to at most one per {@link DEFAULT_THROTTLE_MS} per toolCallId,
  *   with the last pending snapshot always flushed before the terminal update.
- * - `tool_execution_end` -> `completed` / `failed` plus content and `rawOutput`.
+ * - `tool_execution_end` -> `completed` / `failed` plus projected content and optional `rawOutput`.
  *
  * The pure `acpTool*` helpers are exported so M5's history replay can rebuild
  * completed tool calls from stored session entries through the same mapping.
@@ -27,6 +27,7 @@
 import { isAbsolute, relative } from "node:path";
 import type { SessionUpdate, ToolCallContent, ToolCallLocation, ToolKind } from "@agentclientprotocol/sdk";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
+import type { AcpToolDefinition } from "../../core/extensions/types.ts";
 import { resolveToCwd } from "../../core/tools/path-utils.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead } from "../../core/tools/truncate.ts";
 import type { AcpAssistantToolEvent, AcpToolEventSink, AcpToolExecutionEvent } from "./event-translator.ts";
@@ -35,6 +36,7 @@ import type { AcpAssistantToolEvent, AcpToolEventSink, AcpToolExecutionEvent } f
 export const DEFAULT_THROTTLE_MS = 100;
 
 const MAX_TITLE_LENGTH = 120;
+const PROJECTION_FAILURE_MESSAGE = "ACP result projection failed.";
 
 /** Structural view of a pi tool result (the events type them as `any`). */
 type PiToolResult = AgentToolResult<unknown> | undefined;
@@ -44,6 +46,8 @@ export interface AcpToolCallMapperOptions {
 	sendUpdate: (update: SessionUpdate) => void;
 	/** Current session cwd — ACP locations must be absolute. */
 	getCwd: () => string;
+	/** Resolve the current tool definition. Missing definitions use compatibility defaults. */
+	getToolDefinition?: (name: string) => AcpToolDefinition | undefined;
 	/** Snapshot throttle window per toolCallId. Default {@link DEFAULT_THROTTLE_MS}. */
 	throttleMs?: number;
 }
@@ -63,12 +67,14 @@ interface ToolCallState {
 export class AcpToolCallMapper implements AcpToolEventSink {
 	private readonly sendUpdate: (update: SessionUpdate) => void;
 	private readonly getCwd: () => string;
+	private readonly getToolDefinition: (name: string) => AcpToolDefinition | undefined;
 	private readonly throttleMs: number;
 	private readonly calls = new Map<string, ToolCallState>();
 
 	constructor(options: AcpToolCallMapperOptions) {
 		this.sendUpdate = options.sendUpdate;
 		this.getCwd = options.getCwd;
+		this.getToolDefinition = options.getToolDefinition ?? (() => undefined);
 		this.throttleMs = options.throttleMs ?? DEFAULT_THROTTLE_MS;
 	}
 
@@ -113,6 +119,7 @@ export class AcpToolCallMapper implements AcpToolEventSink {
 			return state;
 		}
 		const cwd = this.getCwd();
+		const definition = this.getToolDefinition(toolName);
 		const locations = acpToolCallLocations(toolName, args, cwd);
 		const inputContent = acpToolInputContent(toolName, args, cwd);
 		state.announced = true;
@@ -121,18 +128,18 @@ export class AcpToolCallMapper implements AcpToolEventSink {
 			sessionUpdate: "tool_call",
 			toolCallId,
 			title: acpToolCallTitle(toolName, args, cwd),
-			kind: acpToolKind(toolName),
+			kind: definition?.acpKind ?? acpToolKind(toolName),
 			status: "pending",
 			...(locations ? { locations } : {}),
 			...(inputContent ? { content: inputContent } : {}),
-			...(args === undefined ? {} : { rawInput: args }),
+			...(args === undefined || definition?.acpRawInput === false ? {} : { rawInput: args }),
 		});
 		return state;
 	}
 
 	private handleSnapshot(toolCallId: string, toolName: string, args: unknown, partialResult: PiToolResult): void {
 		const state = this.announce(toolCallId, toolName, args);
-		const content = acpToolResultContent(partialResult);
+		const { content } = projectAcpToolResult(partialResult, this.getToolDefinition(toolName), false);
 		if (content.length === 0) {
 			// Nothing to show yet (pi's bash tool opens with an empty snapshot);
 			// clearing the client's content here would only cause a flicker.
@@ -172,18 +179,24 @@ export class AcpToolCallMapper implements AcpToolEventSink {
 			this.flushSnapshot(toolCallId, state, withheld, Date.now());
 		}
 
-		const content = acpToolTerminalContent({
-			isError,
-			inputContent: state.inputContent,
-			resultContent: acpToolResultContent(result),
-		});
+		const definition = this.getToolDefinition(toolName);
+		const projection = projectAcpToolResult(result, definition, isError);
+		const content = projection.failed
+			? projection.content
+			: acpToolTerminalContent({
+					isError,
+					inputContent: state.inputContent,
+					resultContent: projection.content,
+				});
 		this.calls.delete(toolCallId);
 		this.sendUpdate({
 			sessionUpdate: "tool_call_update",
 			toolCallId,
 			status: isError ? "failed" : "completed",
 			...(content.length > 0 ? { content } : {}),
-			rawOutput: { isError, content: result?.content ?? [], details: result?.details },
+			...(projection.failed || definition?.acpRawOutput === false
+				? {}
+				: { rawOutput: { isError, content: result?.content ?? [], details: result?.details } }),
 		});
 	}
 
@@ -340,14 +353,51 @@ export function acpToolTerminalContent(options: {
  * ACP defines tool-call `content` as displayable information and `rawOutput` as
  * the complete raw result. Keep the model-facing result untouched, but cap the
  * text copied into client fragments to the same limits pi tools use for model
- * output. The caller still places the complete result in `rawOutput`.
+ * output. Unless the tool opts out, the caller separately places the complete
+ * result in `rawOutput`.
  */
-export function acpToolResultContent(result: PiToolResult): ToolCallContent[] {
+export interface AcpToolResultProjection {
+	content: ToolCallContent[];
+	failed: boolean;
+}
+
+/** Project a result and report whether a custom hook failed closed. */
+export function projectAcpToolResult(
+	result: PiToolResult,
+	definition?: AcpToolDefinition,
+	isError = false,
+): AcpToolResultProjection {
+	let content = result?.content ?? [];
+	let failed = false;
+	if (result && definition?.acpResultContent) {
+		try {
+			const projectionInput: AgentToolResult<unknown> = structuredClone({
+				content: result.content,
+				details: result.details,
+			});
+			content = definition.acpResultContent(projectionInput, { isError });
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			console.error(`ACP: result projection failed for ${definition.name}: ${message}`);
+			content = [{ type: "text", text: PROJECTION_FAILURE_MESSAGE }];
+			failed = true;
+		}
+	}
+	return {
+		content: boundedAcpToolResultContent(content, !failed && definition?.acpRawOutput !== false),
+		failed,
+	};
+}
+
+function boundedAcpToolResultContent(
+	content: NonNullable<AgentToolResult<unknown>["content"]>,
+	completeResultInRawOutput: boolean,
+): ToolCallContent[] {
 	const blocks: ToolCallContent[] = [];
 	let remainingBytes = DEFAULT_MAX_BYTES;
 	let remainingLines = DEFAULT_MAX_LINES;
 	let textTruncated = false;
-	for (const item of result?.content ?? []) {
+	for (const item of content) {
 		if (item.type === "text") {
 			if (!item.text) {
 				continue;
@@ -375,7 +425,7 @@ export function acpToolResultContent(result: PiToolResult): ToolCallContent[] {
 			type: "content",
 			content: {
 				type: "text",
-				text: `\n\n[ACP display truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}. Complete result is preserved in rawOutput.]`,
+				text: `\n\n[ACP display truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}.${completeResultInRawOutput ? " Complete result is preserved in rawOutput." : ""}]`,
 			},
 		});
 	}

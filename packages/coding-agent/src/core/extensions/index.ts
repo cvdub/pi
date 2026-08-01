@@ -20,6 +20,7 @@ export type {
 } from "./runner.ts";
 export { ExtensionRunner } from "./runner.ts";
 export type {
+	AcpResultContentOptions,
 	AfterProviderResponseEvent,
 	AgentEndEvent,
 	AgentSettledEvent,

@@ -12,12 +12,14 @@
  * out on their own; compaction and branch summaries survive as the prefixed user
  * messages the model actually receives. Two deliberate display rules apply after
  * that projection: hidden custom messages remain hidden, and tool-result text is
- * bounded for ACP display while the complete result stays in `rawOutput`.
+ * bounded for ACP display while the current tool definition controls whether the
+ * complete result also appears in `rawOutput`.
  *
  * Completed tool calls are rebuilt through the exported helpers of
  * `tool-call-mapper.ts` (`acpToolKind`, `acpToolCallTitle`,
- * `acpToolCallLocations`, `acpToolInputContent`, `acpToolResultContent`), so a
- * replayed tool call renders identically to the live one — one mapping, not two.
+ * `acpToolCallLocations`, `acpToolInputContent`, `projectAcpToolResult`) plus the
+ * currently installed tool definition, so replay applies the same projection
+ * contract as the live call.
  *
  * Ordering contract: {@link streamSessionHistory} does not resolve until every
  * queued notification has been handed to the connection, and `session/load`
@@ -27,6 +29,7 @@
 
 import type { SessionUpdate } from "@agentclientprotocol/sdk";
 import type { AssistantMessage, ToolCall, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
+import type { AcpToolDefinition } from "../../core/extensions/types.ts";
 import { convertToLlm } from "../../core/messages.ts";
 import { type SessionEntry, sessionEntryToContextMessages } from "../../core/session-manager.ts";
 import { textBlock } from "./content.ts";
@@ -36,8 +39,8 @@ import {
 	acpToolCallTitle,
 	acpToolInputContent,
 	acpToolKind,
-	acpToolResultContent,
 	acpToolTerminalContent,
+	projectAcpToolResult,
 } from "./tool-call-mapper.ts";
 
 /**
@@ -55,8 +58,10 @@ export async function streamSessionHistory(options: {
 	cwd: string;
 	/** The loaded session's translator (owns the sessionId and the delivery tail). */
 	translator: AcpEventTranslator;
+	/** Resolve the currently installed tool definition for replay projection. */
+	getToolDefinition?: (name: string) => AcpToolDefinition | undefined;
 }): Promise<void> {
-	for (const update of buildHistoryUpdates(options.entries, options.cwd)) {
+	for (const update of buildHistoryUpdates(options.entries, options.cwd, options.getToolDefinition)) {
 		options.translator.sendUpdate(update);
 	}
 	await options.translator.waitForDeliveries();
@@ -68,7 +73,11 @@ export async function streamSessionHistory(options: {
  *
  * Pure: no I/O, no notification sending — the caller decides how to deliver.
  */
-export function buildHistoryUpdates(entries: SessionEntry[], cwd: string): SessionUpdate[] {
+export function buildHistoryUpdates(
+	entries: SessionEntry[],
+	cwd: string,
+	getToolDefinition: (name: string) => AcpToolDefinition | undefined = () => undefined,
+): SessionUpdate[] {
 	const messages = convertToLlm(entries.filter(isReplayableEntry).flatMap(sessionEntryToContextMessages));
 	// Tool results are emitted as part of their originating tool call, which
 	// appears earlier in the transcript, so they are indexed up front.
@@ -86,7 +95,7 @@ export function buildHistoryUpdates(entries: SessionEntry[], cwd: string): Sessi
 				updates.push(...userChunks(message));
 				break;
 			case "assistant":
-				updates.push(...assistantUpdates(message, resultsByToolCallId, cwd));
+				updates.push(...assistantUpdates(message, resultsByToolCallId, cwd, getToolDefinition));
 				break;
 			case "toolResult":
 				// Already folded into its tool call above.
@@ -141,6 +150,7 @@ function assistantUpdates(
 	message: AssistantMessage,
 	resultsByToolCallId: Map<string, ToolResultMessage>,
 	cwd: string,
+	getToolDefinition: (name: string) => AcpToolDefinition | undefined,
 ): SessionUpdate[] {
 	const updates: SessionUpdate[] = [];
 	for (const part of message.content) {
@@ -156,7 +166,7 @@ function assistantUpdates(
 				}
 				break;
 			case "toolCall":
-				updates.push(toolCallUpdate(part, resultsByToolCallId.get(part.id), cwd));
+				updates.push(toolCallUpdate(part, resultsByToolCallId.get(part.id), cwd, getToolDefinition(part.name)));
 				break;
 		}
 	}
@@ -175,22 +185,33 @@ function assistantUpdates(
  * ran) stays `pending` — it never completed, and ACP has no better status for
  * "started but never finished".
  */
-function toolCallUpdate(toolCall: ToolCall, result: ToolResultMessage | undefined, cwd: string): SessionUpdate {
+function toolCallUpdate(
+	toolCall: ToolCall,
+	result: ToolResultMessage | undefined,
+	cwd: string,
+	definition: AcpToolDefinition | undefined,
+): SessionUpdate {
 	const args = toolCall.arguments;
 	const locations = acpToolCallLocations(toolCall.name, args, cwd);
 	const inputContent = acpToolInputContent(toolCall.name, args, cwd);
 	const isError = result?.isError === true;
-	const resultContent = result ? acpToolResultContent({ content: result.content, details: result.details }) : [];
-	const content = acpToolTerminalContent({ isError, inputContent, resultContent });
+	const projection = result
+		? projectAcpToolResult({ content: result.content, details: result.details }, definition, isError)
+		: undefined;
+	const content = projection?.failed
+		? projection.content
+		: acpToolTerminalContent({ isError, inputContent, resultContent: projection?.content ?? [] });
 	return {
 		sessionUpdate: "tool_call",
 		toolCallId: toolCall.id,
 		title: acpToolCallTitle(toolCall.name, args, cwd),
-		kind: acpToolKind(toolCall.name),
+		kind: definition?.acpKind ?? acpToolKind(toolCall.name),
 		status: result === undefined ? "pending" : isError ? "failed" : "completed",
 		...(locations ? { locations } : {}),
 		...(content.length > 0 ? { content } : {}),
-		...(args === undefined ? {} : { rawInput: args }),
-		...(result === undefined ? {} : { rawOutput: { isError, content: result.content, details: result.details } }),
+		...(args === undefined || definition?.acpRawInput === false ? {} : { rawInput: args }),
+		...(result === undefined || projection?.failed || definition?.acpRawOutput === false
+			? {}
+			: { rawOutput: { isError, content: result.content, details: result.details } }),
 	};
 }

@@ -51,6 +51,7 @@ export {
 export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.ts";
 // Extension system
 export type {
+	AcpResultContentOptions,
 	AgentEndEvent,
 	AgentSettledEvent,
 	AgentStartEvent,

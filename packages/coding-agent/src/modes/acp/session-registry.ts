@@ -194,6 +194,7 @@ export class AcpSessionRegistry {
 			entries: handle.runtime.session.sessionManager.buildContextEntries(),
 			cwd: handle.runtime.cwd,
 			translator: handle.translator,
+			getToolDefinition: (name) => handle.runtime.session.getToolDefinition(name),
 		});
 		// A resumed session already has context and cost on disk; without this the
 		// client would show nothing until the first prompt of the new connection
@@ -215,8 +216,9 @@ export class AcpSessionRegistry {
 		let deliver: AcpEventTranslator | undefined;
 		const toolCalls = new AcpToolCallMapper({
 			sendUpdate: (update) => deliver?.sendUpdate(update),
-			// `runtime.cwd` follows extension-driven session replacement.
+			// `runtime.cwd` and `runtime.session` follow extension-driven session replacement.
 			getCwd: () => runtime.cwd,
+			getToolDefinition: (name) => runtime.session.getToolDefinition(name),
 		});
 		const translator = new AcpEventTranslator({
 			sessionId,
