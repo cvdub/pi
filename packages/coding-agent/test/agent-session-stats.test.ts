@@ -178,7 +178,14 @@ describe("AgentSession.getSessionStats", () => {
 			syncAgentMessages(session, sessionManager);
 
 			const stats = session.getSessionStats();
-			expect(stats.tokens).toEqual({ input: 10, output: 20, cacheRead: 30, cacheWrite: 40, reasoning: 0, total: 100 });
+			expect(stats.tokens).toEqual({
+				input: 10,
+				output: 20,
+				cacheRead: 30,
+				cacheWrite: 40,
+				reasoning: 0,
+				total: 100,
+			});
 			expect(stats.cost).toBe(1);
 		} finally {
 			session.dispose();
@@ -201,7 +208,14 @@ describe("AgentSession.getSessionStats", () => {
 			syncAgentMessages(session, sessionManager);
 
 			const stats = session.getSessionStats();
-			expect(stats.tokens).toEqual({ input: 10, output: 20, cacheRead: 30, cacheWrite: 40, reasoning: 0, total: 100 });
+			expect(stats.tokens).toEqual({
+				input: 10,
+				output: 20,
+				cacheRead: 30,
+				cacheWrite: 40,
+				reasoning: 0,
+				total: 100,
+			});
 			expect(stats.cost).toBe(1);
 		} finally {
 			session.dispose();
@@ -225,7 +239,14 @@ describe("AgentSession.getSessionStats", () => {
 			syncAgentMessages(session, sessionManager);
 
 			const stats = session.getSessionStats();
-			expect(stats.tokens).toEqual({ input: 10, output: 20, cacheRead: 30, cacheWrite: 40, reasoning: 0, total: 100 });
+			expect(stats.tokens).toEqual({
+				input: 10,
+				output: 20,
+				cacheRead: 30,
+				cacheWrite: 40,
+				reasoning: 0,
+				total: 100,
+			});
 			expect(stats.cost).toBe(1);
 		} finally {
 			session.dispose();
