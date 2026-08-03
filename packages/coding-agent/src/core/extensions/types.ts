@@ -492,6 +492,18 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	acpRawInput?: false;
 	/** Set to false to omit the complete model-facing result from ACP `rawOutput`. */
 	acpRawOutput?: false;
+	/**
+	 * Mark text result content as preformatted rather than markdown.
+	 *
+	 * ACP leaves `content` rendering to the client, and clients that render
+	 * markdown otherwise reinterpret raw tool output: a `* ` line becomes a
+	 * bullet, `_x_` becomes italics, a leading `#` becomes a heading. Set this on
+	 * tools whose text output is not markdown so each text block is wrapped in a
+	 * fenced code block. Wrapping happens after display bounding, so truncation
+	 * cannot sever a fence, and the fence is always longer than any backtick run
+	 * inside the block. Leave unset for tools whose output is genuinely markdown.
+	 */
+	acpPreformattedText?: true;
 
 	/** Optional compatibility shim to prepare raw tool call arguments before schema validation. Must return an object conforming to TParams. */
 	prepareArguments?: (args: unknown) => Static<TParams>;
@@ -528,7 +540,7 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 
 export type AcpToolDefinition = Pick<
 	ToolDefinition,
-	"name" | "acpResultContent" | "acpKind" | "acpRawInput" | "acpRawOutput"
+	"name" | "acpResultContent" | "acpKind" | "acpRawInput" | "acpRawOutput" | "acpPreformattedText"
 >;
 
 type AnyToolDefinition = ToolDefinition<any, any, any>;

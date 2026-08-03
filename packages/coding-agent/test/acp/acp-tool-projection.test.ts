@@ -29,7 +29,7 @@ function toolUpdates(sent: SessionUpdate[]): AcpToolCallUpdate[] {
 
 function projectionTool(
 	projection: ProjectionTool["acpResultContent"],
-	policy: Pick<ProjectionTool, "acpKind" | "acpRawInput" | "acpRawOutput"> = {},
+	policy: Pick<ProjectionTool, "acpKind" | "acpRawInput" | "acpRawOutput" | "acpPreformattedText"> = {},
 ): ProjectionTool {
 	return {
 		name: "catalog",
@@ -330,5 +330,52 @@ describe("ACP tool-defined projection during history replay", () => {
 		expect(fallback).toMatchObject({ kind: "other", rawInput: { query: "books" } });
 		expect(contentText(fallback.content)).toBe("persisted model output");
 		expect(fallback).toHaveProperty("rawOutput");
+	});
+});
+
+describe("acp preformatted text", () => {
+	function terminalText(tool: ProjectionTool, text: string): string {
+		const updates = driveMapper(tool, {
+			result: { content: [{ type: "text", text }], details: { summary: "done" } },
+		});
+		return contentText(updates.at(-1)?.content);
+	}
+
+	it("leaves text unfenced when the tool does not opt in", () => {
+		const tool = projectionTool(undefined);
+		expect(terminalText(tool, "* PASS: alpha\n* FAIL: bravo")).toBe("* PASS: alpha\n* FAIL: bravo");
+	});
+
+	it("fences text so markdown clients cannot reinterpret list markers", () => {
+		const tool = projectionTool(undefined, { acpPreformattedText: true });
+		expect(terminalText(tool, "* PASS: alpha\n* FAIL: bravo")).toBe("```\n* PASS: alpha\n* FAIL: bravo\n```");
+	});
+
+	it("widens the fence past any backtick run in the output", () => {
+		const tool = projectionTool(undefined, { acpPreformattedText: true });
+		expect(terminalText(tool, "a\n```\nb")).toBe("````\na\n```\nb\n````");
+		expect(terminalText(tool, "a\n`````\nb")).toBe("``````\na\n`````\nb\n``````");
+	});
+
+	it("keeps the fence intact when display bounding truncates the output", () => {
+		const tool = projectionTool(undefined, { acpPreformattedText: true });
+		const text = Array.from({ length: 2500 }, (_, i) => `* line ${i}`).join("\n");
+		const rendered = terminalText(tool, text);
+		// Fencing runs after bounding, so both delimiters survive truncation.
+		expect(rendered.startsWith("```\n")).toBe(true);
+		expect(rendered).toContain("\n```\n\n[ACP display truncated");
+		// The note itself stays outside the fence.
+		expect(rendered.trimEnd().endsWith("]")).toBe(true);
+		expect(rendered).toContain("* line 0\n");
+		expect(rendered).not.toContain("* line 2499");
+	});
+
+	it("charges the fence against the display budget so framing cannot exceed it", () => {
+		const tool = projectionTool(undefined, { acpPreformattedText: true });
+		// A fence must out-run the longest backtick run it wraps, so unbounded
+		// framing on backtick-heavy output would emit roughly three times the cap.
+		const rendered = terminalText(tool, "`".repeat(50 * 1024));
+		expect(rendered.length).toBeLessThanOrEqual(50 * 1024);
+		expect(rendered).toContain("[ACP display truncated");
 	});
 });

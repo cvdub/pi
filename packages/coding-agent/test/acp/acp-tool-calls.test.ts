@@ -44,8 +44,19 @@ function contentText(content: ToolCallContent[] | null | undefined): string {
 }
 
 /** Content-only snapshot updates (no status), i.e. streamed partial results. */
+/**
+ * Strip the code fence wrapping output from tools that mark their text
+ * preformatted, so assertions compare the payload rather than the framing.
+ */
+function unfenced(text: string): string {
+	const fenced = text.match(/^(`{3,})\n([\s\S]*)\n\1$/);
+	return fenced ? fenced[2] : text;
+}
+
 function snapshotTexts(updates: AcpToolCallUpdate[]): string[] {
-	return updates.filter((update) => !update.status && update.content).map((update) => contentText(update.content));
+	return updates
+		.filter((update) => !update.status && update.content)
+		.map((update) => unfenced(contentText(update.content)));
 }
 
 function occurrences(haystack: string, needle: string): number {
@@ -246,7 +257,7 @@ describe("ACP tool-call translation (M2)", () => {
 			expect(current.length).toBeGreaterThan(previous.length);
 		}
 
-		const finalText = contentText(updates[updates.length - 1]?.content);
+		const finalText = unfenced(contentText(updates[updates.length - 1]?.content));
 		for (const text of [...snapshots, finalText]) {
 			for (const marker of markers) {
 				expect(occurrences(text, marker)).toBeLessThanOrEqual(1);

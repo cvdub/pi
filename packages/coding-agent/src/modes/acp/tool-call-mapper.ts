@@ -384,14 +384,31 @@ export function projectAcpToolResult(
 		}
 	}
 	return {
-		content: boundedAcpToolResultContent(content, !failed && definition?.acpRawOutput !== false),
+		content: boundedAcpToolResultContent(
+			content,
+			!failed && definition?.acpRawOutput !== false,
+			!failed && definition?.acpPreformattedText === true,
+		),
 		failed,
 	};
+}
+
+/**
+ * The fence that can safely wrap TEXT: longer than the longest backtick run it
+ * contains, so the block cannot be broken out of.
+ */
+function fenceFor(text: string): string {
+	let longestRun = 0;
+	for (const run of text.match(/`+/g) ?? []) {
+		longestRun = Math.max(longestRun, run.length);
+	}
+	return "`".repeat(Math.max(3, longestRun + 1));
 }
 
 function boundedAcpToolResultContent(
 	content: NonNullable<AgentToolResult<unknown>["content"]>,
 	completeResultInRawOutput: boolean,
+	preformatted: boolean,
 ): ToolCallContent[] {
 	const blocks: ToolCallContent[] = [];
 	let remainingBytes = DEFAULT_MAX_BYTES;
@@ -406,12 +423,21 @@ function boundedAcpToolResultContent(
 				textTruncated = true;
 				continue;
 			}
+			// Charge the fence against the same budget as the text it wraps, so
+			// framing cannot push a fragment past the limits this bound exists to
+			// enforce (output that is mostly backticks would otherwise triple).
+			const fence = preformatted ? fenceFor(item.text) : "";
+			const framingBytes = fence ? fence.length * 2 + 2 : 0;
+			const framingLines = fence ? 2 : 0;
 			const display = truncateHead(item.text, {
-				maxBytes: remainingBytes,
-				maxLines: remainingLines,
+				maxBytes: Math.max(0, remainingBytes - framingBytes),
+				maxLines: Math.max(0, remainingLines - framingLines),
 			});
 			if (display.content) {
-				blocks.push({ type: "content", content: { type: "text", text: display.content } });
+				const text = fence ? `${fence}\n${display.content.replace(/\n+$/, "")}\n${fence}` : display.content;
+				blocks.push({ type: "content", content: { type: "text", text } });
+				remainingBytes -= framingBytes;
+				remainingLines -= framingLines;
 			}
 			remainingBytes -= display.outputBytes;
 			remainingLines -= display.outputLines;
