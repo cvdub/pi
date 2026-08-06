@@ -93,6 +93,7 @@ export interface Settings {
 	defaultModel?: string;
 	defaultThinkingLevel?: ThinkingLevel;
 	transport?: TransportSetting; // default: "auto"
+	fastMode?: boolean; // default: false; applies to openai-codex/gpt-* models
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
 	theme?: string;
@@ -762,6 +763,16 @@ export class SettingsManager {
 	setTransport(transport: TransportSetting): void {
 		this.globalSettings.transport = transport;
 		this.markModified("transport");
+		this.save();
+	}
+
+	getFastMode(): boolean {
+		return this.settings.fastMode ?? false;
+	}
+
+	setFastMode(enabled: boolean): void {
+		this.globalSettings.fastMode = enabled;
+		this.markModified("fastMode");
 		this.save();
 	}
 

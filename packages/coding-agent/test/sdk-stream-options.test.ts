@@ -161,6 +161,29 @@ describe("createAgentSession stream options", () => {
 		expect(options?.websocketConnectTimeoutMs).toBe(0);
 	});
 
+	it("initializes the agent service tier from fastMode settings", async () => {
+		const model = createModel("openai-codex-responses");
+		const settingsManager = SettingsManager.inMemory({ fastMode: true });
+		const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
+		await authStorage.modify(model.provider, async () => ({ type: "api_key", key: "test-api-key" }));
+		const modelRegistry = await createModelRegistry(authStorage, join(agentDir, "models.json"));
+		const modelRuntime = getModelRuntime(modelRegistry);
+		const { session } = await createAgentSession({
+			cwd,
+			agentDir,
+			model,
+			modelRuntime,
+			settingsManager,
+			sessionManager: SessionManager.inMemory(cwd),
+		});
+
+		try {
+			expect(session.agent.serviceTier).toBe("priority");
+		} finally {
+			session.dispose();
+		}
+	});
+
 	it("forwards provider retry settings", async () => {
 		const options = await captureStreamOptions("openai-completions", {
 			retry: { provider: { maxRetries: 2, maxRetryDelayMs: 3000 } },

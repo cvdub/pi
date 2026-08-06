@@ -41,6 +41,12 @@ const model: Model<"openai-responses"> = {
 };
 
 describe("context token estimation", () => {
+	it("forwards service tier through simple stream options", () => {
+		const context: Context = { messages: [] };
+
+		expect(buildBaseOptions(model, context, { serviceTier: "priority" }).serviceTier).toBe("priority");
+	});
+
 	it("ignores stale assistant usage after a newer message is inserted before it", () => {
 		const context: Context = {
 			systemPrompt: "system",

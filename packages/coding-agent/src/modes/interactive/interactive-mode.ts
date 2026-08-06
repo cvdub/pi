@@ -78,6 +78,7 @@ import type {
 	ProjectTrustContext,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
+import { supportsFastMode } from "../../core/fast-mode.ts";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
@@ -2919,6 +2920,12 @@ export class InteractiveMode {
 				await this.handleModelCommand(searchTerm);
 				return;
 			}
+			if (text === "/fast" || text.startsWith("/fast ")) {
+				const action = text.startsWith("/fast ") ? text.slice(6).trim() : undefined;
+				this.handleFastCommand(action);
+				this.editor.setText("");
+				return;
+			}
 			if (text === "/export" || text.startsWith("/export ")) {
 				await this.handleExportCommand(text);
 				this.editor.setText("");
@@ -4652,6 +4659,30 @@ export class InteractiveMode {
 		}
 
 		this.showModelSelector(searchTerm);
+	}
+
+	private handleFastCommand(action?: string): void {
+		const normalizedAction = action?.toLowerCase();
+		if (normalizedAction !== undefined && !["on", "off", "status"].includes(normalizedAction)) {
+			this.showWarning("Usage: /fast [on|off|status]");
+			return;
+		}
+
+		if (normalizedAction === "on" || normalizedAction === "off") {
+			const enabled = normalizedAction === "on";
+			this.session.agent.serviceTier = enabled ? "priority" : undefined;
+			this.settingsManager.setFastMode(enabled);
+			this.footer.invalidate();
+		}
+
+		const enabled = this.session.agent.serviceTier === "priority";
+		const model = this.session.model;
+		if (enabled && !supportsFastMode(model)) {
+			const modelRef = model ? `${model.provider}/${model.id}` : "the current model";
+			this.showWarning(`Fast mode: on (inactive for ${modelRef})`);
+			return;
+		}
+		this.showStatus(`Fast mode: ${enabled ? "on" : "off"}`);
 	}
 
 	private async findExactModelMatch(searchTerm: string): Promise<Model<any> | undefined> {

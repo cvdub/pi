@@ -2,6 +2,7 @@ import type {
 	ImageContent,
 	Message,
 	Model,
+	ServiceTier,
 	SimpleStreamOptions,
 	TextContent,
 	ThinkingBudgets,
@@ -118,6 +119,7 @@ export interface AgentOptions {
 	sessionId?: string;
 	thinkingBudgets?: ThinkingBudgets;
 	transport?: Transport;
+	serviceTier?: ServiceTier;
 	maxRetryDelayMs?: number;
 	toolExecution?: ToolExecutionMode;
 }
@@ -208,6 +210,8 @@ export class Agent {
 	public thinkingBudgets?: ThinkingBudgets;
 	/** Preferred transport forwarded to the stream function. */
 	public transport: Transport;
+	/** Optional provider service tier forwarded to the stream function. */
+	public serviceTier?: ServiceTier;
 	/** Optional cap for provider-requested retry delays. */
 	public maxRetryDelayMs?: number;
 	/** Tool execution strategy for assistant messages that contain multiple tool calls. */
@@ -233,6 +237,7 @@ export class Agent {
 		this.sessionId = runtimeOptions.sessionId;
 		this.thinkingBudgets = runtimeOptions.thinkingBudgets;
 		this.transport = runtimeOptions.transport ?? "auto";
+		this.serviceTier = runtimeOptions.serviceTier;
 		this.maxRetryDelayMs = runtimeOptions.maxRetryDelayMs;
 		this.toolExecution = runtimeOptions.toolExecution ?? "parallel";
 	}
@@ -452,6 +457,7 @@ export class Agent {
 			onPayload: this.onPayload,
 			onResponse: this.onResponse,
 			transport: this.transport,
+			serviceTier: this.serviceTier,
 			thinkingBudgets: this.thinkingBudgets,
 			maxRetryDelayMs: this.maxRetryDelayMs,
 			toolExecution: this.toolExecution,

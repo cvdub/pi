@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added provider service-tier support to simple stream options.
+
 ## [0.84.2] - 2026-08-14
 
 ### Added

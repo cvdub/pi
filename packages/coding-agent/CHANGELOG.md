@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added fast mode for `openai-codex/gpt-*` models through `/fast`, `--fast`, and the `fastMode` setting.
+
 ### Fixed
 
 - Fixed Z.AI Coding Plan defaults referencing the removed GLM-5.1 model ([#8096](https://github.com/earendil-works/pi/issues/8096)).

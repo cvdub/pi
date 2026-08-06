@@ -368,6 +368,20 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("fast mode flags", () => {
+		test("parses --fast", () => {
+			expect(parseArgs(["--fast"]).fast).toBe(true);
+		});
+
+		test("parses --no-fast", () => {
+			expect(parseArgs(["--no-fast"]).fast).toBe(false);
+		});
+
+		test("uses the last fast mode flag", () => {
+			expect(parseArgs(["--fast", "--no-fast"]).fast).toBe(false);
+		});
+	});
+
 	describe("tool flags", () => {
 		test("parses --no-tools flag", () => {
 			const result = parseArgs(["--no-tools"]);

@@ -105,6 +105,8 @@ export type CacheRetention = "none" | "short" | "long";
 
 export type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 
+export type ServiceTier = "auto" | "default" | "flex" | "scale" | "priority" | null;
+
 /** Provider-scoped environment overrides. Values take precedence over process.env. */
 export type ProviderEnv = Record<string, string>;
 export type ProviderHeaders = Record<string, string | null>;
@@ -193,6 +195,10 @@ export interface StreamOptions extends ProviderRequestOptions<Model<Api>> {
 	 * Providers that do not support this option ignore it.
 	 */
 	transport?: Transport;
+	/**
+	 * Provider service tier. Providers that do not support this option ignore it.
+	 */
+	serviceTier?: ServiceTier;
 	/**
 	 * Prompt cache retention preference. Providers map this to their supported values.
 	 * Default: "short".

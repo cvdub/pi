@@ -807,4 +807,26 @@ describe("Agent", () => {
 		await agent.prompt("hello again");
 		expect(receivedSessionId).toBe("session-def");
 	});
+
+	it("forwards serviceTier to streamFunction options", async () => {
+		let receivedServiceTier: string | null | undefined;
+		const agent = new Agent({
+			serviceTier: "priority",
+			streamFn: (_model, _context, options) => {
+				receivedServiceTier = options?.serviceTier;
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("ok") });
+				});
+				return stream;
+			},
+		});
+
+		await agent.prompt("hello");
+		expect(receivedServiceTier).toBe("priority");
+
+		agent.serviceTier = undefined;
+		await agent.prompt("hello again");
+		expect(receivedServiceTier).toBeUndefined();
+	});
 });
