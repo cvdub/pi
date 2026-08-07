@@ -94,6 +94,7 @@ import {
 	wrapRegisteredTools,
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
+import { supportsFastMode } from "./fast-mode.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
@@ -1758,6 +1759,29 @@ export class AgentSession {
 
 	private _clampThinkingLevel(level: ThinkingLevel, _availableLevels: ThinkingLevel[]): ThinkingLevel {
 		return this.model ? (clampThinkingLevel(this.model, level) as ThinkingLevel) : "off";
+	}
+
+	// =========================================================================
+	// Fast Mode
+	// =========================================================================
+
+	/** Whether fast mode (priority service tier) is enabled. */
+	get fastMode(): boolean {
+		return this.agent.serviceTier === "priority";
+	}
+
+	/**
+	 * Enable or disable fast mode.
+	 * Saves to settings. Only takes effect on models that support it.
+	 */
+	setFastMode(enabled: boolean): void {
+		this.agent.serviceTier = enabled ? "priority" : undefined;
+		this.settingsManager.setFastMode(enabled);
+	}
+
+	/** Whether the current model honors fast mode. */
+	supportsFastMode(): boolean {
+		return supportsFastMode(this.model);
 	}
 
 	// =========================================================================

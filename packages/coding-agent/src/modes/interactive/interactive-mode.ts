@@ -78,7 +78,6 @@ import type {
 	ProjectTrustContext,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
-import { supportsFastMode } from "../../core/fast-mode.ts";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
@@ -4669,15 +4668,13 @@ export class InteractiveMode {
 		}
 
 		if (normalizedAction === "on" || normalizedAction === "off") {
-			const enabled = normalizedAction === "on";
-			this.session.agent.serviceTier = enabled ? "priority" : undefined;
-			this.settingsManager.setFastMode(enabled);
+			this.session.setFastMode(normalizedAction === "on");
 			this.footer.invalidate();
 		}
 
-		const enabled = this.session.agent.serviceTier === "priority";
+		const enabled = this.session.fastMode;
 		const model = this.session.model;
-		if (enabled && !supportsFastMode(model)) {
+		if (enabled && !this.session.supportsFastMode()) {
 			const modelRef = model ? `${model.provider}/${model.id}` : "the current model";
 			this.showWarning(`Fast mode: on (inactive for ${modelRef})`);
 			return;

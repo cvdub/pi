@@ -140,6 +140,52 @@ describe("ACP mode (M1)", () => {
 		expect(harness.agent.agent.sessions.get(response.sessionId)?.runtime.session.thinkingLevel).toBe("high");
 	});
 
+	it("advertises fast mode as an on/off config option and applies it to the session", async () => {
+		harness = await createAcpHarness();
+		await harness.initialize();
+
+		const response = await harness.newSession();
+		expect(response.configOptions?.find((option) => option.id === "fast_mode")).toMatchObject({
+			id: "fast_mode",
+			name: "Fast mode",
+			category: "_fast_mode",
+			type: "select",
+			currentValue: "off",
+			// The faux model is not an openai-codex gpt-* model, so the option
+			// stays visible but says it has no effect here.
+			description: expect.stringContaining("inactive for"),
+			options: [
+				{ value: "on", name: "Fast mode: on" },
+				{ value: "off", name: "Fast mode: off" },
+			],
+		});
+
+		const enabled = await harness.client.setSessionConfigOption({
+			sessionId: response.sessionId,
+			configId: "fast_mode",
+			value: "on",
+		});
+		const session = harness.agent.agent.sessions.get(response.sessionId)?.runtime.session;
+		expect(session?.fastMode).toBe(true);
+		expect(session?.agent.serviceTier).toBe("priority");
+		expect(enabled.configOptions.find((option) => option.id === "fast_mode")).toMatchObject({ currentValue: "on" });
+		expect(harness.updatesOfType("config_option_update").at(-1)?.configOptions).toEqual(enabled.configOptions);
+
+		await expect(
+			harness.client.setSessionConfigOption({ sessionId: response.sessionId, configId: "fast_mode", value: "yes" }),
+		).rejects.toMatchObject({ code: -32602 });
+		expect(session?.fastMode).toBe(true);
+
+		const disabled = await harness.client.setSessionConfigOption({
+			sessionId: response.sessionId,
+			configId: "fast_mode",
+			value: "off",
+		});
+		expect(session?.fastMode).toBe(false);
+		expect(session?.agent.serviceTier).toBeUndefined();
+		expect(disabled.configOptions.find((option) => option.id === "fast_mode")).toMatchObject({ currentValue: "off" });
+	});
+
 	it("refreshes model-specific thinking choices after a model change", async () => {
 		harness = await createAcpHarness({
 			models: [

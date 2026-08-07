@@ -13,6 +13,7 @@ import type { AgentSession } from "../../core/agent-session.ts";
 
 const MODEL_CONFIG_ID = "model";
 export const THOUGHT_LEVEL_CONFIG_ID = "thought_level";
+export const FAST_MODE_CONFIG_ID = "fast_mode";
 
 function modelReference(model: Model<Api>): string {
 	return `${model.provider}/${model.id}`;
@@ -20,6 +21,20 @@ function modelReference(model: Model<Api>): string {
 
 function thinkingLevelName(level: ThinkingLevel): string {
 	return `Thinking: ${level}`;
+}
+
+/**
+ * Fast mode is a persisted global setting that only takes effect on models
+ * accepting the priority service tier, so it stays visible on every model and
+ * says in its description when the current model ignores it.
+ */
+function fastModeDescription(session: AgentSession): string {
+	if (session.supportsFastMode()) {
+		return "Priority service tier for faster responses.";
+	}
+	const model = session.model;
+	const modelRef = model ? modelReference(model) : "the current model";
+	return `Priority service tier for faster responses (inactive for ${modelRef}).`;
 }
 
 /**
@@ -68,6 +83,22 @@ export async function buildSessionConfigOptions(session: AgentSession): Promise<
 		})),
 	});
 
+	// A `boolean` option would model this better, but clients commonly only
+	// offer `select` options in their config picker, so an on/off select is
+	// what actually reaches the user.
+	options.push({
+		id: FAST_MODE_CONFIG_ID,
+		name: "Fast mode",
+		description: fastModeDescription(session),
+		category: "_fast_mode",
+		type: "select",
+		currentValue: session.fastMode ? "on" : "off",
+		options: [
+			{ value: "on", name: "Fast mode: on", description: null },
+			{ value: "off", name: "Fast mode: off", description: null },
+		],
+	});
+
 	return options;
 }
 
@@ -98,6 +129,15 @@ export async function setSessionConfigOption(
 		}
 
 		session.setThinkingLevel(thinkingLevel);
+		return buildSessionConfigOptions(session);
+	}
+
+	if (params.configId === FAST_MODE_CONFIG_ID) {
+		if (params.value !== "on" && params.value !== "off") {
+			throw RequestError.invalidParams(params, `Fast mode expects "on" or "off", got: ${params.value}`);
+		}
+
+		session.setFastMode(params.value === "on");
 		return buildSessionConfigOptions(session);
 	}
 

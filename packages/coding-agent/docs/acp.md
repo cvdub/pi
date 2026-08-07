@@ -33,6 +33,7 @@ Run this checklist against a real agent-shell session (against the built `dist/c
 
 - [ ] **Model selection.** Open Agent Shell's model picker; it lists every model available to pi. Switch models and confirm the header updates before sending the next prompt.
 - [ ] **Thinking level.** Open Agent Shell's thought-level picker, change the reasoning effort, and confirm the header updates before the next prompt.
+- [ ] **Fast mode.** With `C-c C-s` (`agent-shell-set-session-config-option`), select "Fast mode" and set it to on; confirm the choice sticks and that `/fast status` in an interactive pi session reports the same value.
 - [ ] **No session modes.** Confirm Agent Shell's session-mode control is empty. Pi has no permission/sandbox modes and deliberately does not alias them to thinking, so nothing is advertised there; the thought-level picker is the only thinking control. Switch between reasoning and non-reasoning models and confirm its available choices refresh.
 - [ ] **Streaming text.** Send a prompt; the assistant's reply appears incrementally as it streams, not all at once at the end.
 - [ ] **Separate thought sections.** With a reasoning-capable model, thinking content renders in its own section, distinct from the reply text (`agent_thought_chunk` vs `agent_message_chunk`).
@@ -44,8 +45,9 @@ Run this checklist against a real agent-shell session (against the built `dist/c
 
 ## Scope: what's supported
 
-- Model and thinking-level discovery and switching through ACP session configuration (`session/new`, `session/load`, and `session/set_config_option`)
+- Model, thinking-level, and fast-mode discovery and switching through ACP session configuration (`session/new`, `session/load`, and `session/set_config_option`)
 - Model-specific thinking choices refreshed after model changes (`category: thought_level`)
+- Fast mode as the `fast_mode` config option (`category: _fast_mode`), an `on`/`off` select rather than a `boolean` option because clients commonly only offer selects in their config picker. It mirrors `/fast`: the value is the persisted global `fastMode` setting, so it stays listed on every model, and its description says when the current model ignores it (only `openai-codex/gpt-*` models honor the priority service tier)
 - Streaming assistant text and thinking (`agent_message_chunk` / `agent_thought_chunk`)
 - Tool-call translation (`tool_call` / `tool_call_update`) with kind/title/locations and diff content for edits and writes. Displayable tool-result text is bounded to 2,000 lines or 50 KiB; the complete result always remains in Pi's model context, while each tool can choose whether ACP also receives it as optional `rawOutput`.
 - fs delegation (`fs/read_text_file` / `fs/write_text_file`), gated on `clientCapabilities.fs`

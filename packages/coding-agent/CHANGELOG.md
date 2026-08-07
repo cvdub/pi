@@ -5,6 +5,7 @@
 ### Added
 
 - Added fast mode for `openai-codex/gpt-*` models through `/fast`, `--fast`, and the `fastMode` setting.
+- Added a `fast_mode` ACP session config option so ACP clients can toggle fast mode alongside model and thinking level.
 
 ### Fixed
 
